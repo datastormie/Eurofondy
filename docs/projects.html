@@ -6,135 +6,36 @@
 <title>EU Funded Projects — Slovakia 2021–2027</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
 <style>
-  * { box-sizing: border-box; }
-  body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; background: #f7f8fa; margin: 0; padding: 30px 16px; }
-  .card { background: #fff; max-width: 1300px; margin: 0 auto; padding: 28px 32px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
-
-  .nav { max-width: 1300px; margin: 0 auto 14px auto; display: flex; gap: 10px; flex-wrap: wrap; }
-  .btn-nav {
-    display: inline-block; background: #305496; color: #fff; text-decoration: none;
-    font-size: 13px; font-weight: 600; padding: 8px 18px; border-radius: 999px;
-    font-family: 'Montserrat', Arial, Helvetica, sans-serif; border: none; cursor: pointer;
-    transition: background 0.15s;
-  }
-  .btn-nav:hover { background: #24406f; }
-
-  h1 { text-align: center; margin-bottom: 4px; color: #1f2937; font-size: 22px; }
-  .subtitle { text-align: center; color: #6b7280; margin-top: 0; margin-bottom: 4px; font-size: 14px; }
-  .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 20px; }
-
-  .active-filter-banner {
-    display: none; background: #eef2ff; color: #305496; border: 1px solid #c7d2fe;
-    border-radius: 6px; padding: 8px 14px; font-size: 13px; margin-bottom: 16px;
-    text-align: center;
-  }
-  .active-filter-banner button {
-    margin-left: 10px; border: none; background: #305496; color: #fff; border-radius: 4px;
-    padding: 2px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
-  }
-
-  .filters {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 18px;
-    padding: 16px;
-    background: #f9fafb;
-    border-radius: 8px;
-    border: 1px solid #e5e7eb;
-  }
-  .filter-group { display: flex; flex-direction: column; }
-  .filter-group label { font-size: 11px; color: #6b7280; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-  .filter-group input, .filter-group select {
-    padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
-    font-family: 'Montserrat', Arial, Helvetica, sans-serif; width: 100%;
-  }
-  .filter-group.date-range { flex-direction: row; gap: 6px; align-items: flex-end; }
-  .filter-group.date-range > div { flex: 1; display: flex; flex-direction: column; }
-  .filter-group.date-range label { margin-bottom: 4px; }
-  .filters-actions { grid-column: 1 / -1; text-align: right; }
-  .filters-actions button {
-    border: 1px solid #d1d5db; background: #fff; color: #374151; border-radius: 6px;
-    padding: 7px 14px; font-size: 12px; cursor: pointer; font-family: inherit;
-  }
-  .filters-actions button:hover { background: #f3f4f6; }
-
-  .table-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 8px; }
-  .table-toolbar .hint { font-size: 11px; color: #9ca3af; margin-right: auto; }
-  .scroll-btn {
-    border: 1px solid #d1d5db; background: #fff; color: #305496; border-radius: 6px;
-    width: 30px; height: 30px; font-size: 15px; cursor: pointer; font-family: inherit;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .scroll-btn:hover { background: #eef2ff; }
-  .scroll-btn:disabled { color: #d1d5db; cursor: not-allowed; }
-
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; }
-  table { width: 100%; min-width: 1300px; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
-  th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; background: #fff; }
-  th { background: #305496; color: #fff; cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 2; }
-  th:hover { background: #24406f; }
-  th.sorted-asc::after { content: " \25B2"; }
-  th.sorted-desc::after { content: " \25BC"; }
-  tr:hover td { background: #f3f4f6; }
-
-  /* Frozen columns: Code (1st) and Project Name (2nd) */
-  th:nth-child(1), td:nth-child(1) { position: sticky; left: 0; z-index: 1; width: 130px; min-width: 130px; }
-  th:nth-child(2), td:nth-child(2) { position: sticky; left: 130px; z-index: 1; width: 260px; min-width: 260px; white-space: normal; }
-  th:nth-child(1), th:nth-child(2) { z-index: 3; }
-  td:nth-child(1), td:nth-child(2) { box-shadow: 2px 0 4px -2px rgba(0,0,0,0.15); }
-  tr:hover td:nth-child(1), tr:hover td:nth-child(2) { background: #f3f4f6; }
-
-  td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.wrap { white-space: normal; max-width: 260px; }
-  .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
-  .empty { text-align: center; color: #9ca3af; font-size: 13px; padding: 24px; }
-
-  .pagination {
-    display: flex; align-items: center; justify-content: center; gap: 14px;
-    margin-top: 16px; font-size: 13px; color: #374151;
-  }
-  .pagination button {
-    border: 1px solid #d1d5db; background: #fff; color: #305496; border-radius: 6px;
-    padding: 6px 14px; font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 600;
-  }
-  .pagination button:hover:not(:disabled) { background: #eef2ff; }
-  .pagination button:disabled { color: #d1d5db; cursor: not-allowed; border-color: #e5e7eb; }
-
-  @media (max-width: 1024px) {
-    .filters { grid-template-columns: repeat(2, 1fr); }
-  }
-
-  @media (max-width: 768px) {
-    body { padding: 16px 8px; }
-    .card { padding: 20px 16px; border-radius: 8px; }
-    .nav { padding: 0 8px; }
-    h1 { font-size: 19px; }
-    .subtitle { font-size: 13px; }
-    .filters { grid-template-columns: 1fr; }
-    .filter-group.date-range { flex-direction: column; align-items: stretch; }
-  }
-
-  @media (max-width: 480px) {
-    h1 { font-size: 17px; }
-    table { min-width: 1000px; font-size: 11.5px; }
-    th, td { padding: 7px 8px; }
-    th:nth-child(1), td:nth-child(1) { width: 100px; min-width: 100px; }
-    th:nth-child(2), td:nth-child(2) { left: 100px; width: 190px; min-width: 190px; }
-    .pagination { flex-wrap: wrap; gap: 8px; }
-  }
+  .card { max-width: 1300px; }
+  table { min-width: 1300px; }
+  @media (max-width: 480px) { table { min-width: 1000px; } }
 </style>
 </head>
 <body>
-<div class="nav">
-  <a class="btn-nav" href="index.html">← Programs</a>
-  <a class="btn-nav" href="top_projects_chart.html">Top 50 Projects →</a>
-  <a class="btn-nav" href="top_recipients_chart.html">Top 25 Recipients →</a>
+<div class="topbar">
+  <a class="brand" href="index.html">
+    <svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#003399"/>
+      <g fill="#FFCC00">
+        <circle cx="12" cy="4" r="1.15"/><circle cx="18.5" cy="7.8" r="1.15"/><circle cx="18.5" cy="16.2" r="1.15"/>
+        <circle cx="12" cy="20" r="1.15"/><circle cx="5.5" cy="16.2" r="1.15"/><circle cx="5.5" cy="7.8" r="1.15"/>
+      </g>
+    </svg>
+    EU Funds Slovakia
+  </a>
+  <nav class="nav-links">
+    <a href="index.html">Programs</a>
+    <a class="current" href="projects.html">Projects</a>
+    <a href="top_projects_chart.html">Top 50 Projects</a>
+    <a href="top_recipients_chart.html">Top 25 Recipients</a>
+  </nav>
 </div>
 <div class="card">
   <h1>EU Funded Projects — Slovakia 2021–2027</h1>
+  <span class="title-rule"></span>
   <p class="subtitle">Live data from api.itms21.sk</p>
   <p class="updated" id="updated-label">Loading...</p>
 
@@ -184,8 +85,8 @@
       </div>
     </div>
 
-    <div class="filters-actions" style="grid-column: span 2;">
-      <button id="resetFilters">Reset filters</button>
+    <div class="filters-actions">
+      <button class="btn-secondary" id="resetFilters">Reset filters</button>
     </div>
   </div>
 
@@ -193,7 +94,7 @@
     <p class="error" style="display:none;" id="error-box"></p>
 
     <div class="table-toolbar">
-      <span class="hint">Code &amp; Project Name stay frozen while scrolling →</span>
+      <span class="hint-inline">Code &amp; Project Name stay frozen while scrolling →</span>
       <button class="scroll-btn" id="scrollLeftBtn" title="Scroll left">←</button>
       <button class="scroll-btn" id="scrollRightBtn" title="Scroll right">→</button>
     </div>

@@ -6,75 +6,49 @@
 <title>EU Funding Programs — Slovakia 2021–2027</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
 <style>
-  * { box-sizing: border-box; }
-  body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; background: #f7f8fa; margin: 0; padding: 30px 16px; }
-  .card { background: #fff; max-width: 1100px; margin: 0 auto; padding: 28px 32px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
-  .nav { max-width: 1100px; margin: 0 auto 14px auto; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
-  .btn-nav {
-    display: inline-block; background: #305496; color: #fff; text-decoration: none;
-    font-size: 13px; font-weight: 600; padding: 8px 18px; border-radius: 999px;
-    font-family: 'Montserrat', Arial, Helvetica, sans-serif; border: none; cursor: pointer;
-    transition: background 0.15s;
-  }
-  .btn-nav:hover { background: #24406f; }
-  h1 { text-align: center; margin-bottom: 4px; color: #1f2937; font-size: 22px; }
-  .subtitle { text-align: center; color: #6b7280; margin-top: 0; margin-bottom: 4px; font-size: 14px; }
-  .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 14px; }
-  .hint {
-    text-align: center; margin: 0 auto 22px auto; max-width: 420px;
-    background: #eef2ff; color: #305496; border: 1px solid #c7d2fe; border-radius: 999px;
-    padding: 8px 18px; font-size: 13px; font-weight: 600;
-  }
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { background: #305496; color: #fff; cursor: pointer; user-select: none; white-space: nowrap; }
-  th:hover { background: #24406f; }
-  th.sorted-asc::after { content: " \25B2"; }
-  th.sorted-desc::after { content: " \25BC"; }
-  tbody tr { cursor: pointer; }
-  tr:hover { background: #eef2ff; }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
-  .search { margin-bottom: 14px; }
-  .search input { padding: 8px 12px; width: 100%; max-width: 300px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-family: 'Montserrat', Arial, Helvetica, sans-serif; }
-  .chart-section { margin-top: 28px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
-  .scale-toggle { text-align: center; margin-bottom: 12px; font-size: 12px; color: #374151; }
+  .chart-section { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--hairline); }
+  .scale-toggle { text-align: center; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
   .scale-toggle label { margin-right: 20px; cursor: pointer; display: inline-block; }
   .chart-wrap { max-width: 700px; height: 280px; margin: 0 auto; }
+  table { min-width: 640px; }
+  tbody tr { cursor: pointer; }
 
-  @media (max-width: 768px) {
-    body { padding: 16px 8px; }
-    .card { padding: 20px 16px; border-radius: 8px; }
-    .nav { max-width: 100%; padding: 0 8px; }
-    h1 { font-size: 19px; }
-    .subtitle { font-size: 13px; }
-    .search input { max-width: 100%; }
-    .chart-wrap { height: 240px; }
-  }
-
+  @media (max-width: 768px) { .chart-wrap { height: 240px; } }
   @media (max-width: 480px) {
-    h1 { font-size: 17px; }
-    table { min-width: 560px; font-size: 12px; }
-    th, td { padding: 8px 8px; }
+    table { min-width: 560px; }
     .scale-toggle label { display: block; margin: 0 0 8px 0; }
     .chart-wrap { height: 220px; }
   }
 </style>
 </head>
 <body>
-<div class="nav">
-  <a class="btn-nav" href="projects.html">View Projects →</a>
-  <a class="btn-nav" href="top_projects_chart.html">Top 50 Projects →</a>
-  <a class="btn-nav" href="top_recipients_chart.html">Top 25 Recipients →</a>
+<div class="topbar">
+  <a class="brand" href="index.html">
+    <svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#003399"/>
+      <g fill="#FFCC00">
+        <circle cx="12" cy="4" r="1.15"/><circle cx="18.5" cy="7.8" r="1.15"/><circle cx="18.5" cy="16.2" r="1.15"/>
+        <circle cx="12" cy="20" r="1.15"/><circle cx="5.5" cy="16.2" r="1.15"/><circle cx="5.5" cy="7.8" r="1.15"/>
+      </g>
+    </svg>
+    EU Funds Slovakia
+  </a>
+  <nav class="nav-links">
+    <a class="current" href="index.html">Programs</a>
+    <a href="projects.html">Projects</a>
+    <a href="top_projects_chart.html">Top 50 Projects</a>
+    <a href="top_recipients_chart.html">Top 25 Recipients</a>
+  </nav>
 </div>
-<div class="card">
+<div class="card card--narrow">
   <h1>EU Funding Programs — Slovakia 2021–2027</h1>
+  <span class="title-rule"></span>
   <p class="subtitle">Live data from api.itms21.sk</p>
   <p class="updated" id="updated-label">Loading...</p>
-  <p class="hint">👉 Click a program row to see its projects</p>
+  <p class="hint">Tip: click a program row to see its projects.</p>
 
   <div class="search">
     <input type="text" id="searchBox" placeholder="Filter by name or code...">
@@ -186,8 +160,8 @@ function renderChart(data) {
     data: {
       labels: labels,
       datasets: [
-        { label: 'EU contribution', data: euData, backgroundColor: '#305496', borderRadius: 3 },
-        { label: 'National (SR) contribution', data: srData, backgroundColor: '#8FAADC', borderRadius: 3 }
+        { label: 'EU contribution', data: euData, backgroundColor: '#003399', borderRadius: 3 },
+        { label: 'National (SR) contribution', data: srData, backgroundColor: '#7C93C7', borderRadius: 3 }
       ]
     },
     options: {

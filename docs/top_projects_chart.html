@@ -6,51 +6,36 @@
 <title>Top 50 Most Expensive Projects — Slovakia 2021–2027</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
 <style>
-  * { box-sizing: border-box; }
-  body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; background: #f7f8fa; margin: 0; padding: 30px 16px; }
-  .card { background: #fff; max-width: 1100px; margin: 0 auto; padding: 28px 32px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
-
-  .nav { max-width: 1100px; margin: 0 auto 14px auto; display: flex; gap: 10px; flex-wrap: wrap; }
-  .btn-nav {
-    display: inline-block; background: #305496; color: #fff; text-decoration: none;
-    font-size: 13px; font-weight: 600; padding: 8px 18px; border-radius: 999px;
-    font-family: 'Montserrat', Arial, Helvetica, sans-serif; border: none; cursor: pointer;
-    transition: background 0.15s;
-  }
-  .btn-nav:hover { background: #24406f; }
-
-  h1 { text-align: center; margin-bottom: 4px; color: #1f2937; font-size: 22px; }
-  .subtitle { text-align: center; color: #6b7280; margin-top: 0; margin-bottom: 4px; font-size: 14px; }
-  .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 24px; }
-  .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
-
-  .chart-wrap { width: 100%; height: 1400px; }
-
-  @media (max-width: 768px) {
-    body { padding: 16px 8px; }
-    .card { padding: 20px 16px; border-radius: 8px; }
-    .nav { padding: 0 8px; }
-    h1 { font-size: 19px; }
-    .subtitle { font-size: 13px; }
-    .chart-wrap { height: 1100px; }
-  }
-
-  @media (max-width: 480px) {
-    h1 { font-size: 17px; }
-    .chart-wrap { height: 950px; }
-  }
+  .chart-wrap { height: 1400px; }
+  @media (max-width: 768px) { .chart-wrap { height: 1100px; } }
+  @media (max-width: 480px) { .chart-wrap { height: 950px; } }
 </style>
 </head>
 <body>
-<div class="nav">
-  <a class="btn-nav" href="index.html">← Programs</a>
-  <a class="btn-nav" href="projects.html">← Projects Table</a>
-  <a class="btn-nav" href="top_recipients_chart.html">Top 25 Recipients →</a>
+<div class="topbar">
+  <a class="brand" href="index.html">
+    <svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#003399"/>
+      <g fill="#FFCC00">
+        <circle cx="12" cy="4" r="1.15"/><circle cx="18.5" cy="7.8" r="1.15"/><circle cx="18.5" cy="16.2" r="1.15"/>
+        <circle cx="12" cy="20" r="1.15"/><circle cx="5.5" cy="16.2" r="1.15"/><circle cx="5.5" cy="7.8" r="1.15"/>
+      </g>
+    </svg>
+    EU Funds Slovakia
+  </a>
+  <nav class="nav-links">
+    <a href="index.html">Programs</a>
+    <a href="projects.html">Projects</a>
+    <a class="current" href="top_projects_chart.html">Top 50 Projects</a>
+    <a href="top_recipients_chart.html">Top 25 Recipients</a>
+  </nav>
 </div>
-<div class="card">
+<div class="card card--narrow">
   <h1>Top 50 Most Expensive Projects</h1>
+  <span class="title-rule"></span>
   <p class="subtitle">EU vs. national (SR) contribution — most expensive on top</p>
   <p class="updated" id="updated-label">Loading...</p>
 
@@ -112,8 +97,8 @@ function renderTopChart(data) {
     data: {
       labels: labels,
       datasets: [
-        { label: 'SR (€)', data: srAmounts, backgroundColor: '#8FAADC', borderRadius: 3 },
-        { label: 'EU (€)', data: euAmounts, backgroundColor: '#305496', borderRadius: 3 }
+        { label: 'SR (€)', data: srAmounts, backgroundColor: '#7C93C7', borderRadius: 3 },
+        { label: 'EU (€)', data: euAmounts, backgroundColor: '#003399', borderRadius: 3 }
       ]
     },
     options: {
