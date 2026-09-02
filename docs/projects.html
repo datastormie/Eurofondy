@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EU Funded Projects — Slovakia 2021–2027</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; background: #f7f8fa; margin: 0; padding: 30px 16px; }
+  .card { background: #fff; max-width: 1300px; margin: 0 auto; padding: 28px 32px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
+  .nav { max-width: 1300px; margin: 0 auto 14px auto; }
+  .nav a { color: #305496; text-decoration: none; font-size: 13px; font-weight: 600; }
+  .nav a:hover { text-decoration: underline; }
+  h1 { text-align: center; margin-bottom: 4px; color: #1f2937; font-size: 22px; }
+  .subtitle { text-align: center; color: #6b7280; margin-top: 0; margin-bottom: 4px; font-size: 14px; }
+  .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 20px; }
+  .active-filter-banner {
+    display: none; background: #eef2ff; color: #305496; border: 1px solid #c7d2fe;
+    border-radius: 6px; padding: 8px 14px; font-size: 13px; margin-bottom: 16px;
+    text-align: center;
+  }
+  .active-filter-banner button {
+    margin-left: 10px; border: none; background: #305496; color: #fff; border-radius: 4px;
+    padding: 2px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
+  }
+
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+  }
+  .filter-group { display: flex; flex-direction: column; }
+  .filter-group label { font-size: 11px; color: #6b7280; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+  .filter-group input, .filter-group select {
+    padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
+    font-family: 'Montserrat', Arial, Helvetica, sans-serif; width: 100%;
+  }
+  .filter-group.date-range { flex-direction: row; gap: 6px; align-items: flex-end; }
+  .filter-group.date-range > div { flex: 1; display: flex; flex-direction: column; }
+  .filter-group.date-range label { margin-bottom: 4px; }
+  .filters-actions { grid-column: 1 / -1; text-align: right; }
+  .filters-actions button {
+    border: 1px solid #d1d5db; background: #fff; color: #374151; border-radius: 6px;
+    padding: 7px 14px; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .filters-actions button:hover { background: #f3f4f6; }
+
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; min-width: 1400px; border-collapse: collapse; font-size: 12.5px; }
+  th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+  th { background: #305496; color: #fff; cursor: pointer; user-select: none; position: sticky; top: 0; }
+  th:hover { background: #24406f; }
+  th.sorted-asc::after { content: " \25B2"; }
+  th.sorted-desc::after { content: " \25BC"; }
+  tr:hover { background: #f3f4f6; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.wrap { white-space: normal; max-width: 260px; }
+  .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
+  .empty { text-align: center; color: #9ca3af; font-size: 13px; padding: 24px; }
+
+  .pagination {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    margin-top: 16px; font-size: 13px; color: #374151;
+  }
+  .pagination button {
+    border: 1px solid #d1d5db; background: #fff; color: #305496; border-radius: 6px;
+    padding: 6px 14px; font-size: 13px; cursor: pointer; font-family: inherit; font-weight: 600;
+  }
+  .pagination button:hover:not(:disabled) { background: #eef2ff; }
+  .pagination button:disabled { color: #d1d5db; cursor: not-allowed; border-color: #e5e7eb; }
+
+  .chart-section { margin-top: 32px; padding-top: 22px; border-top: 1px solid #e5e7eb; }
+  .chart-section h2 { text-align: center; font-size: 16px; color: #1f2937; margin-bottom: 4px; }
+  .chart-section .chart-subtitle { text-align: center; color: #6b7280; font-size: 12px; margin-top: 0; margin-bottom: 16px; }
+  .chart-wrap { width: 100%; height: 900px; }
+  .legend-wrap { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 18px; margin-top: 14px; font-size: 12px; color: #374151; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  @media (max-width: 1024px) {
+    .filters { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 768px) {
+    body { padding: 16px 8px; }
+    .card { padding: 20px 16px; border-radius: 8px; }
+    .nav { padding: 0 8px; }
+    h1 { font-size: 19px; }
+    .subtitle { font-size: 13px; }
+    .filters { grid-template-columns: 1fr; }
+    .filter-group.date-range { flex-direction: column; align-items: stretch; }
+    .chart-wrap { height: 700px; }
+  }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 17px; }
+    table { min-width: 1100px; font-size: 11.5px; }
+    th, td { padding: 7px 8px; }
+    .pagination { flex-wrap: wrap; gap: 8px; }
+    .chart-wrap { height: 600px; }
+  }
+</style>
+</head>
+<body>
+<div class="nav"><a href="index.html">← Back to Programs</a></div>
+<div class="card">
+  <h1>EU Funded Projects — Slovakia 2021–2027</h1>
+  <p class="subtitle">Live data from api.itms21.sk</p>
+  <p class="updated" id="updated-label">Loading...</p>
+
+  <div class="active-filter-banner" id="activeFilterBanner">
+    Showing projects for program: <strong id="activeFilterLabel"></strong>
+    <button id="clearProgramFilter">Clear</button>
+  </div>
+
+  <div class="filters">
+    <div class="filter-group">
+      <label for="filterKod">Code</label>
+      <input type="text" id="filterKod" placeholder="e.g. BMVI1002">
+    </div>
+    <div class="filter-group">
+      <label for="filterNazov">Project name</label>
+      <input type="text" id="filterNazov" placeholder="Search by name...">
+    </div>
+    <div class="filter-group">
+      <label for="filterProgram">Program</label>
+      <select id="filterProgram">
+        <option value="">All programs</option>
+      </select>
+    </div>
+    <div></div>
+
+    <div class="filter-group date-range">
+      <div>
+        <label for="filterZaciatokFrom">Planned start from</label>
+        <input type="date" id="filterZaciatokFrom">
+      </div>
+      <div>
+        <label for="filterZaciatokTo">to</label>
+        <input type="date" id="filterZaciatokTo">
+      </div>
+    </div>
+    <div class="filter-group date-range">
+      <div>
+        <label for="filterKoniecFrom">Planned end from</label>
+        <input type="date" id="filterKoniecFrom">
+      </div>
+      <div>
+        <label for="filterKoniecTo">to</label>
+        <input type="date" id="filterKoniecTo">
+      </div>
+    </div>
+
+    <div class="filters-actions" style="grid-column: span 2;">
+      <button id="resetFilters">Reset filters</button>
+    </div>
+  </div>
+
+  <div id="table-container">
+    <p class="error" style="display:none;" id="error-box"></p>
+    <div class="table-scroll">
+      <table id="dataTable" style="display:none;">
+        <thead>
+          <tr>
+            <th data-key="project_id" data-type="number">ID</th>
+            <th data-key="kod" data-type="string">Code</th>
+            <th data-key="nazov" data-type="string">Project Name</th>
+            <th data-key="program_skratka" data-type="string">Program</th>
+            <th data-key="program_nazov" data-type="string">Program Name</th>
+            <th data-key="prijimatel_nazov" data-type="string">Recipient</th>
+            <th data-key="prijimatel_ico" data-type="string">ICO</th>
+            <th data-key="stav" data-type="string">Status</th>
+            <th data-key="vrealizacii" data-type="bool">In Progress</th>
+            <th data-key="ukonceny" data-type="bool">Completed</th>
+            <th data-key="suma_eu" data-type="number">EU (€)</th>
+            <th data-key="suma_sr" data-type="number">SR (€)</th>
+            <th data-key="suma_spolu" data-type="number">Total (€)</th>
+            <th data-key="celkova_zazmluvnena_suma" data-type="number">Contracted (€)</th>
+            <th data-key="poskytnute_prostriedky" data-type="number">Disbursed (€)</th>
+            <th data-key="planovany_zaciatok" data-type="date">Planned Start</th>
+            <th data-key="planovany_koniec" data-type="date">Planned End</th>
+            <th data-key="created_at" data-type="date">Created</th>
+            <th data-key="updated_at" data-type="date">Updated</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+      <p class="empty" id="emptyMessage" style="display:none;">No projects match the current filters.</p>
+    </div>
+
+    <div class="pagination" id="pagination" style="display:none;">
+      <button id="prevPage">← Previous</button>
+      <span id="pageInfo"></span>
+      <button id="nextPage">Next →</button>
+    </div>
+  </div>
+
+  <div class="chart-section">
+    <h2>Top 50 Most Expensive Projects</h2>
+    <p class="chart-subtitle">By contracted amount, colored by program</p>
+    <div class="chart-wrap">
+      <canvas id="topProjectsChart"></canvas>
+    </div>
+    <div class="legend-wrap" id="chartLegend"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="projects_logic.js"></script>
+<script>
+const HAS_CHART = typeof Chart !== 'undefined';
+if (HAS_CHART) {
+  Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
+}
+
+const JSON_URL = 'project_data.json';
+const PAGE_SIZE = 25;
+
+let allData = [];
+let currentPage = 1;
+let sortKey = 'celkova_zazmluvnena_suma';
+let sortDir = 'desc';
+let topChart = null;
+
+const PROGRAM_COLORS = ['#305496', '#8FAADC', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646', '#B8860B', '#2E8B57', '#6A5ACD'];
+let programColorMap = {};
+
+function typeOf(key) {
+  const th = document.querySelector('th[data-key="' + key + '"]');
+  return th ? th.dataset.type : 'string';
+}
+
+function formatEUR(value) {
+  if (value == null || Number.isNaN(Number(value))) return '';
+  return '€' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function formatEURShort(value) {
+  if (value >= 1e9) return (value / 1e9).toFixed(2) + ' B';
+  if (value >= 1e6) return (value / 1e6).toFixed(1) + ' M';
+  if (value >= 1e3) return (value / 1e3).toFixed(0) + ' K';
+  return Number(value).toLocaleString();
+}
+
+function formatDateValue(value) {
+  if (value == null || value === '') return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function dateValueToMs(value) {
+  if (value == null || value === '') return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.getTime();
+}
+
+function formatIsoDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function dateInputToMs(value, endOfDay) {
+  if (!value) return null;
+  const d = new Date(value + (endOfDay ? 'T23:59:59' : 'T00:00:00'));
+  return d.getTime();
+}
+
+function getFilters() {
+  return {
+    kod: document.getElementById('filterKod').value.trim(),
+    nazov: document.getElementById('filterNazov').value.trim(),
+    program: document.getElementById('filterProgram').value,
+    zaciatokFrom: dateInputToMs(document.getElementById('filterZaciatokFrom').value, false),
+    zaciatokTo: dateInputToMs(document.getElementById('filterZaciatokTo').value, true),
+    koniecFrom: dateInputToMs(document.getElementById('filterKoniecFrom').value, false),
+    koniecTo: dateInputToMs(document.getElementById('filterKoniecTo').value, true),
+  };
+}
+
+function populateProgramDropdown(data) {
+  const select = document.getElementById('filterProgram');
+  const programs = ProjectsLogic.distinctPrograms(data);
+  programs.forEach(function (p) {
+    const opt = document.createElement('option');
+    opt.value = p.skratka;
+    opt.textContent = p.skratka;
+    select.appendChild(opt);
+  });
+  programs.forEach(function (p, i) {
+    programColorMap[p.skratka] = PROGRAM_COLORS[i % PROGRAM_COLORS.length];
+  });
+}
+
+function renderTableRows(rows) {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  rows.forEach(function (row) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + (row.project_id != null ? row.project_id : '') + '</td>' +
+      '<td>' + (row.kod || '') + '</td>' +
+      '<td class="wrap">' + (row.nazov || '') + '</td>' +
+      '<td>' + (row.program_skratka || '') + '</td>' +
+      '<td class="wrap">' + (row.program_nazov || '') + '</td>' +
+      '<td class="wrap">' + (row.prijimatel_nazov || '') + '</td>' +
+      '<td>' + (row.prijimatel_ico || '') + '</td>' +
+      '<td>' + (row.stav || '') + '</td>' +
+      '<td>' + (row.vrealizacii ? 'Yes' : 'No') + '</td>' +
+      '<td>' + (row.ukonceny ? 'Yes' : 'No') + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_eu) + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_sr) + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_spolu) + '</td>' +
+      '<td class="num">' + formatEUR(row.celkova_zazmluvnena_suma) + '</td>' +
+      '<td class="num">' + formatEUR(row.poskytnute_prostriedky) + '</td>' +
+      '<td>' + formatDateValue(row.planovany_zaciatok) + '</td>' +
+      '<td>' + formatDateValue(row.planovany_koniec) + '</td>' +
+      '<td>' + formatDateValue(row.created_at) + '</td>' +
+      '<td>' + formatDateValue(row.updated_at) + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderPaginationControls(pageResult) {
+  const pagination = document.getElementById('pagination');
+  const table = document.getElementById('dataTable');
+  const emptyMsg = document.getElementById('emptyMessage');
+
+  if (pageResult.totalRows === 0) {
+    table.style.display = 'none';
+    pagination.style.display = 'none';
+    emptyMsg.style.display = 'block';
+    return;
+  }
+
+  table.style.display = 'table';
+  emptyMsg.style.display = 'none';
+  pagination.style.display = 'flex';
+
+  document.getElementById('pageInfo').textContent =
+    'Showing ' + pageResult.start + '–' + pageResult.end + ' of ' + pageResult.totalRows +
+    ' (page ' + pageResult.page + ' of ' + pageResult.totalPages + ')';
+
+  document.getElementById('prevPage').disabled = pageResult.page <= 1;
+  document.getElementById('nextPage').disabled = pageResult.page >= pageResult.totalPages;
+}
+
+function render() {
+  const filters = getFilters();
+  const filtered = ProjectsLogic.applyFilters(allData, filters);
+  const sorted = ProjectsLogic.sortData(filtered, sortKey, sortDir, typeOf);
+  const pageResult = ProjectsLogic.paginate(sorted, currentPage, PAGE_SIZE);
+  currentPage = pageResult.page;
+  renderTableRows(pageResult.rows);
+  renderPaginationControls(pageResult);
+}
+
+document.querySelectorAll('th').forEach(function (th) {
+  th.addEventListener('click', function () {
+    const key = th.dataset.key;
+    if (sortKey === key) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortKey = key;
+      sortDir = 'asc';
+    }
+    document.querySelectorAll('th').forEach(function (t) { t.classList.remove('sorted-asc', 'sorted-desc'); });
+    th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    currentPage = 1;
+    render();
+  });
+});
+
+['filterKod', 'filterNazov', 'filterProgram', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'].forEach(function (id) {
+  document.getElementById(id).addEventListener('input', function () { currentPage = 1; render(); });
+  document.getElementById(id).addEventListener('change', function () { currentPage = 1; render(); });
+});
+
+document.getElementById('resetFilters').addEventListener('click', function () {
+  ['filterKod', 'filterNazov', 'filterProgram', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'].forEach(function (id) {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('activeFilterBanner').style.display = 'none';
+  currentPage = 1;
+  render();
+});
+
+document.getElementById('clearProgramFilter').addEventListener('click', function () {
+  document.getElementById('filterProgram').value = '';
+  document.getElementById('activeFilterBanner').style.display = 'none';
+  currentPage = 1;
+  render();
+});
+
+document.getElementById('prevPage').addEventListener('click', function () {
+  currentPage -= 1;
+  render();
+});
+document.getElementById('nextPage').addEventListener('click', function () {
+  currentPage += 1;
+  render();
+});
+
+function renderTopChart(data) {
+  if (!HAS_CHART) {
+    document.querySelector('.chart-section').style.display = 'none';
+    return;
+  }
+  const top50 = ProjectsLogic.topNByAmount(data, 50, 'celkova_zazmluvnena_suma');
+  // Chart.js horizontal bars read bottom-to-top, so reverse to show highest at top
+  const ordered = [...top50].reverse();
+
+  const labels = ordered.map(function (p) {
+    const name = p.nazov || p.kod || ('#' + p.project_id);
+    return name.length > 55 ? name.slice(0, 52) + '…' : name;
+  });
+  const fullNames = ordered.map(function (p) { return p.nazov || ''; });
+  const programs = ordered.map(function (p) { return p.program_skratka || ''; });
+  const programNames = ordered.map(function (p) { return p.program_nazov || ''; });
+  const amounts = ordered.map(function (p) { return p.celkova_zazmluvnena_suma; });
+  const colors = programs.map(function (p) { return programColorMap[p] || '#9ca3af'; });
+
+  const ctx = document.getElementById('topProjectsChart').getContext('2d');
+  if (topChart) topChart.destroy();
+
+  topChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Contracted amount',
+        data: amounts,
+        backgroundColor: colors,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: function (items) { return fullNames[items[0].dataIndex]; },
+            label: function (item) {
+              const i = item.dataIndex;
+              return [
+                'Program: ' + programs[i] + ' — ' + programNames[i],
+                'Contracted: €' + Number(amounts[i]).toLocaleString(undefined, { maximumFractionDigits: 0 })
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { callback: function (v) { return '€' + formatEURShort(v); } },
+          title: { display: true, text: 'Contracted amount (EUR)' }
+        },
+        y: {
+          ticks: { autoSkip: false, font: { size: 10 } }
+        }
+      }
+    }
+  });
+
+  renderLegend(programs);
+}
+
+function renderLegend(usedPrograms) {
+  const legendWrap = document.getElementById('chartLegend');
+  legendWrap.innerHTML = '';
+  const unique = Array.from(new Set(usedPrograms)).sort();
+  unique.forEach(function (skratka) {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML =
+      '<span class="legend-swatch" style="background:' + (programColorMap[skratka] || '#9ca3af') + '"></span>' +
+      '<span>' + skratka + '</span>';
+    legendWrap.appendChild(item);
+  });
+}
+
+function applyProgramFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const program = params.get('program');
+  if (program) {
+    document.getElementById('filterProgram').value = program;
+    document.getElementById('activeFilterLabel').textContent = program;
+    document.getElementById('activeFilterBanner').style.display = 'block';
+  }
+}
+
+fetch(JSON_URL)
+  .then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  })
+  .then(function (payload) {
+    allData = payload.projects;
+    document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
+    populateProgramDropdown(allData);
+    applyProgramFromUrl();
+    render();
+    renderTopChart(allData);
+  })
+  .catch(function (err) {
+    document.getElementById('updated-label').textContent = '';
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    box.textContent = 'Could not load ' + JSON_URL + ': ' + err.message;
+  });
+</script>
+</body>
+</html>
