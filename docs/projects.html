@@ -58,10 +58,19 @@
       <input type="text" id="filterRecipient" placeholder="Search by recipient...">
     </div>
     <div class="filter-group">
-      <label for="filterProgram">Program</label>
-      <select id="filterProgram">
-        <option value="">All programs</option>
-      </select>
+      <label for="programToggle">Program</label>
+      <div class="multiselect" id="programMulti">
+        <button type="button" class="ms-toggle" id="programToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="programToggleLabel">All programs</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="programPanel">
+          <div class="ms-actions">
+            <button type="button" id="programSelectAll">Select all</button>
+            <button type="button" id="programClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="programOptions"></div>
+        </div>
+      </div>
     </div>
 
     <div class="filter-group date-range">
@@ -147,6 +156,8 @@ let allData = [];
 let currentPage = 1;
 let sortKey = 'celkova_zazmluvnena_suma';
 let sortDir = 'desc';
+let allPrograms = [];
+const selectedPrograms = new Set();
 
 function typeOf(key) {
   const th = document.querySelector('th[data-key="' + key + '"]');
@@ -181,7 +192,7 @@ function getFilters() {
     kod: document.getElementById('filterKod').value.trim(),
     nazov: document.getElementById('filterNazov').value.trim(),
     recipient: document.getElementById('filterRecipient').value.trim(),
-    program: document.getElementById('filterProgram').value,
+    program: Array.from(selectedPrograms),
     zaciatokFrom: dateInputToMs(document.getElementById('filterZaciatokFrom').value, false),
     zaciatokTo: dateInputToMs(document.getElementById('filterZaciatokTo').value, true),
     koniecFrom: dateInputToMs(document.getElementById('filterKoniecFrom').value, false),
@@ -189,15 +200,51 @@ function getFilters() {
   };
 }
 
+function updateProgramToggleLabel() {
+  const label = document.getElementById('programToggleLabel');
+  const count = selectedPrograms.size;
+  if (count === 0) {
+    label.textContent = 'All programs';
+  } else if (count === 1) {
+    label.textContent = Array.from(selectedPrograms)[0];
+  } else if (count === allPrograms.length) {
+    label.textContent = 'All programs (' + count + ')';
+  } else {
+    label.textContent = count + ' programs selected';
+  }
+}
+
 function populateProgramDropdown(data) {
-  const select = document.getElementById('filterProgram');
-  const programs = ProjectsLogic.distinctPrograms(data);
-  programs.forEach(function (p) {
-    const opt = document.createElement('option');
-    opt.value = p.skratka;
-    opt.textContent = p.skratka;
-    select.appendChild(opt);
+  const container = document.getElementById('programOptions');
+  allPrograms = ProjectsLogic.distinctPrograms(data);
+  container.innerHTML = '';
+  allPrograms.forEach(function (p) {
+    const id = 'prog_' + p.skratka.replace(/[^A-Za-z0-9_-]/g, '');
+    const wrap = document.createElement('label');
+    wrap.className = 'ms-option';
+    wrap.title = p.nazov || p.skratka;
+    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + escapeHtml(p.skratka) + '"><span>' +
+      escapeHtml(p.skratka) + '</span>';
+    const cb = wrap.querySelector('input');
+    cb.addEventListener('change', function () {
+      if (cb.checked) selectedPrograms.add(p.skratka);
+      else selectedPrograms.delete(p.skratka);
+      updateProgramToggleLabel();
+      currentPage = 1;
+      render();
+    });
+    container.appendChild(wrap);
   });
+  updateProgramToggleLabel();
+}
+
+function setSelectedPrograms(list) {
+  selectedPrograms.clear();
+  (list || []).forEach(function (p) { if (p) selectedPrograms.add(p); });
+  document.querySelectorAll('#programOptions input[type="checkbox"]').forEach(function (cb) {
+    cb.checked = selectedPrograms.has(cb.value);
+  });
+  updateProgramToggleLabel();
 }
 
 function escapeHtml(value) {
@@ -293,23 +340,61 @@ document.querySelectorAll('th').forEach(function (th) {
   });
 });
 
-['filterKod', 'filterNazov', 'filterRecipient', 'filterProgram', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'].forEach(function (id) {
+const TEXT_FILTER_IDS = ['filterKod', 'filterNazov', 'filterRecipient', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'];
+
+TEXT_FILTER_IDS.forEach(function (id) {
   document.getElementById(id).addEventListener('input', function () { currentPage = 1; render(); });
   document.getElementById(id).addEventListener('change', function () { currentPage = 1; render(); });
 });
 
+// ---- Program multi-select dropdown ----
+const programMulti = document.getElementById('programMulti');
+const programToggle = document.getElementById('programToggle');
+
+function setProgramPanelOpen(open) {
+  programMulti.classList.toggle('open', open);
+  programToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+programToggle.addEventListener('click', function (e) {
+  e.stopPropagation();
+  setProgramPanelOpen(!programMulti.classList.contains('open'));
+});
+
+document.addEventListener('click', function (e) {
+  if (!programMulti.contains(e.target)) setProgramPanelOpen(false);
+});
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') setProgramPanelOpen(false);
+});
+
+document.getElementById('programSelectAll').addEventListener('click', function () {
+  setSelectedPrograms(allPrograms.map(function (p) { return p.skratka; }));
+  currentPage = 1;
+  render();
+});
+
+document.getElementById('programClearAll').addEventListener('click', function () {
+  setSelectedPrograms([]);
+  currentPage = 1;
+  render();
+});
+
 document.getElementById('resetFilters').addEventListener('click', function () {
-  ['filterKod', 'filterNazov', 'filterRecipient', 'filterProgram', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'].forEach(function (id) {
+  TEXT_FILTER_IDS.forEach(function (id) {
     document.getElementById(id).value = '';
   });
+  setSelectedPrograms([]);
   document.getElementById('activeFilterBanner').style.display = 'none';
   currentPage = 1;
   render();
 });
 
 document.getElementById('clearActiveFilter').addEventListener('click', function () {
-  document.getElementById('filterProgram').value = '';
+  setSelectedPrograms([]);
   document.getElementById('filterRecipient').value = '';
+  document.getElementById('filterKod').value = '';
   document.getElementById('activeFilterBanner').style.display = 'none';
   currentPage = 1;
   render();
@@ -335,11 +420,20 @@ function applyFiltersFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const program = params.get('program');
   const recipient = params.get('recipient');
+  const kod = params.get('kod');
 
-  if (program) {
-    document.getElementById('filterProgram').value = program;
-    document.getElementById('activeFilterText').textContent = 'Showing projects for program:';
-    document.getElementById('activeFilterLabel').textContent = program;
+  if (kod) {
+    document.getElementById('filterKod').value = kod;
+    document.getElementById('activeFilterText').textContent = 'Showing project:';
+    document.getElementById('activeFilterLabel').textContent = params.get('nazov') || kod;
+    document.getElementById('activeFilterBanner').style.display = 'block';
+  } else if (program) {
+    // Accepts one or more comma-separated program abbreviations.
+    const list = program.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    setSelectedPrograms(list);
+    document.getElementById('activeFilterText').textContent =
+      list.length > 1 ? 'Showing projects for programs:' : 'Showing projects for program:';
+    document.getElementById('activeFilterLabel').textContent = list.join(', ');
     document.getElementById('activeFilterBanner').style.display = 'block';
   } else if (recipient) {
     document.getElementById('filterRecipient').value = recipient;

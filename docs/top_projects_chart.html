@@ -38,6 +38,7 @@
   <span class="title-rule"></span>
   <p class="subtitle">EU vs. national (SR) contribution — most expensive on top</p>
   <p class="updated" id="updated-label">Loading...</p>
+  <p class="hint">Tip: click a bar to open that project in the projects table.</p>
 
   <p class="error" style="display:none;" id="error-box"></p>
 
@@ -68,6 +69,12 @@ function formatEURShort(value) {
   return Number(value).toLocaleString();
 }
 
+function goToProject(kod, nazov) {
+  if (!kod) return;
+  window.location.href = 'projects.html?kod=' + encodeURIComponent(kod) +
+    (nazov ? '&nazov=' + encodeURIComponent(nazov) : '');
+}
+
 function renderTopChart(data) {
   if (!HAS_CHART) {
     document.getElementById('error-box').style.display = 'block';
@@ -79,6 +86,8 @@ function renderTopChart(data) {
   // Chart.js horizontal bars (indexAxis:'y') render the FIRST array item at the TOP by default,
   // so keeping top50 sorted descending (largest first) puts the most expensive project at the top.
   const ordered = top50;
+
+  const codes = ordered.map(function (p) { return p.kod || ''; });
 
   const labels = ordered.map(function (p) {
     const name = p.nazov || p.kod || ('#' + p.project_id);
@@ -105,6 +114,15 @@ function renderTopChart(data) {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      onClick: function (evt, elements) {
+        if (elements.length > 0) {
+          const idx = elements[0].index;
+          goToProject(codes[idx], fullNames[idx]);
+        }
+      },
+      onHover: function (evt, elements) {
+        evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+      },
       plugins: {
         legend: { position: 'top' },
         tooltip: {

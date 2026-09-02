@@ -246,6 +246,77 @@ h1 {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+/* ---------- Multi-select dropdown (Program filter) ---------- */
+.multiselect { position: relative; }
+.ms-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid #d6dbe4;
+  border-radius: var(--radius-control);
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  text-align: left;
+}
+.ms-toggle:focus { outline: 2px solid var(--eu-gold); outline-offset: 1px; border-color: var(--eu-blue); }
+.ms-toggle > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-caret { font-size: 11px; color: var(--eu-blue); }
+.multiselect.open .ms-caret { transform: rotate(180deg); }
+
+.ms-panel {
+  display: none;
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  min-width: 200px;
+  background: #fff;
+  border: 1px solid #d6dbe4;
+  border-radius: var(--radius-control);
+  box-shadow: 0 8px 22px rgba(0, 20, 60, 0.16);
+}
+.multiselect.open .ms-panel { display: block; }
+
+.ms-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eceff5;
+}
+.ms-actions button {
+  flex: 1;
+  border: 1px solid #c7cede;
+  background: #fff;
+  color: var(--eu-blue);
+  border-radius: var(--radius-control);
+  padding: 4px 8px;
+  font-size: 11.5px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ms-actions button:hover { background: rgba(0, 51, 153, 0.07); }
+
+.ms-options { max-height: 240px; overflow-y: auto; padding: 6px 4px; }
+.ms-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ms-option:hover { background: rgba(0, 51, 153, 0.06); }
+.ms-option input { width: auto; margin: 0; accent-color: var(--eu-blue); cursor: pointer; }
+
 .filter-group.date-range { flex-direction: row; gap: 6px; align-items: flex-end; }
 .filter-group.date-range > div { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .filter-group.date-range label { margin-bottom: 5px; }

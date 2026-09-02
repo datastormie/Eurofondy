@@ -22,8 +22,14 @@
       if (filters.recipient) {
         if (!(row.prijimatel_nazov || '').toLowerCase().includes(filters.recipient.toLowerCase())) return false;
       }
+      // filters.program accepts a single string (legacy) or an array of program
+      // abbreviations (multi-select). An empty value / empty array means "all".
       if (filters.program) {
-        if (row.program_skratka !== filters.program) return false;
+        if (Array.isArray(filters.program)) {
+          if (filters.program.length > 0 && !filters.program.includes(row.program_skratka)) return false;
+        } else if (row.program_skratka !== filters.program) {
+          return false;
+        }
       }
       if (filters.zaciatokFrom || filters.zaciatokTo) {
         const rowMs = toMs(row.planovany_zaciatok);
