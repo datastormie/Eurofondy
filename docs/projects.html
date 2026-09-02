@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=2">
+<link rel="stylesheet" href="styles.css?v=3">
 <style>
   .card { max-width: 1300px; }
   table { min-width: 1300px; }
@@ -64,10 +64,6 @@
           <span id="programToggleLabel">All programs</span><span class="ms-caret">▾</span>
         </button>
         <div class="ms-panel" id="programPanel" role="dialog" aria-label="Filter by program">
-          <div class="ms-sheet-header" id="programSheetHeader" hidden>
-            <span>Filter by program</span>
-            <button type="button" id="programDone">Done</button>
-          </div>
           <div class="ms-actions">
             <button type="button" id="programSelectAll">Select all</button>
             <button type="button" id="programClearAll">Clear</button>
@@ -355,25 +351,9 @@ TEXT_FILTER_IDS.forEach(function (id) {
 const programMulti = document.getElementById('programMulti');
 const programToggle = document.getElementById('programToggle');
 
-// The "Done" sheet header belongs to the mobile bottom-sheet layout only.
-// Toggling it in JS (not just CSS) keeps it out of the desktop dropdown even
-// if an older cached stylesheet is in play.
-const programSheetMq = window.matchMedia('(max-width: 768px)');
-function syncProgramSheetHeader() {
-  document.getElementById('programSheetHeader').hidden = !programSheetMq.matches;
-}
-syncProgramSheetHeader();
-if (programSheetMq.addEventListener) {
-  programSheetMq.addEventListener('change', syncProgramSheetHeader);
-} else if (programSheetMq.addListener) {
-  programSheetMq.addListener(syncProgramSheetHeader);
-}
-
 function setProgramPanelOpen(open) {
   programMulti.classList.toggle('open', open);
   programToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-  // On mobile the panel becomes a bottom sheet with a backdrop; lock page scroll.
-  document.body.classList.toggle('ms-open', open);
 }
 
 programToggle.addEventListener('click', function (e) {
@@ -383,16 +363,6 @@ programToggle.addEventListener('click', function (e) {
 
 document.addEventListener('click', function (e) {
   if (!programMulti.contains(e.target)) setProgramPanelOpen(false);
-});
-
-// The mobile backdrop is a ::before pseudo-element of .multiselect, so its clicks
-// report the container itself as the target.
-programMulti.addEventListener('click', function (e) {
-  if (e.target === programMulti) setProgramPanelOpen(false);
-});
-
-document.getElementById('programDone').addEventListener('click', function () {
-  setProgramPanelOpen(false);
 });
 
 document.addEventListener('keydown', function (e) {
