@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EU Funding Programs — Slovakia 2021–2027</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; background: #f7f8fa; margin: 0; padding: 30px 16px; }
+  .card { background: #fff; max-width: 1100px; margin: 0 auto; padding: 28px 32px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
+  h1 { text-align: center; margin-bottom: 4px; color: #1f2937; font-size: 22px; }
+  .subtitle { text-align: center; color: #6b7280; margin-top: 0; margin-bottom: 4px; font-size: 14px; }
+  .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { background: #305496; color: #fff; cursor: pointer; user-select: none; white-space: nowrap; }
+  th:hover { background: #24406f; }
+  th.sorted-asc::after { content: " \25B2"; }
+  th.sorted-desc::after { content: " \25BC"; }
+  tr:hover { background: #f3f4f6; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
+  .search { margin-bottom: 14px; }
+  .search input { padding: 8px 12px; width: 100%; max-width: 300px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>EU Funding Programs — Slovakia 2021–2027</h1>
+  <p class="subtitle">Live data from api.itms21.sk</p>
+  <p class="updated" id="updated-label">Loading...</p>
+
+  <div class="search">
+    <input type="text" id="searchBox" placeholder="Filter by name or code...">
+  </div>
+
+  <div id="table-container">
+    <p class="error" style="display:none;" id="error-box"></p>
+    <table id="dataTable" style="display:none;">
+      <thead>
+        <tr>
+          <th data-key="skratka" data-type="string">Code</th>
+          <th data-key="nazov_sk" data-type="string">Program</th>
+          <th data-key="typ_programu" data-type="string">Type</th>
+          <th data-key="suma_eu" data-type="number">EU (€)</th>
+          <th data-key="suma_sr" data-type="number">SR (€)</th>
+          <th data-key="suma_spolu" data-type="number">Total (€)</th>
+          <th data-key="subjekt_nazov" data-type="string">Managing Body</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const JSON_URL = 'program_data.json';
+let currentData = [];
+let sortKey = 'suma_spolu';
+let sortDir = 'desc';
+
+function formatEUR(value) {
+  if (value == null) return '';
+  return '€' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function renderTable(data) {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  data.forEach(function(row) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + (row.skratka || '') + '</td>' +
+      '<td>' + (row.nazov_sk || '') + '</td>' +
+      '<td>' + (row.typ_programu || '') + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_eu) + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_sr) + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_spolu) + '</td>' +
+      '<td>' + (row.subjekt_nazov || '') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function sortData(data, key, dir) {
+  const type = document.querySelector('th[data-key="' + key + '"]').dataset.type;
+  const sorted = [...data].sort(function(a, b) {
+    let av = a[key], bv = b[key];
+    if (type === 'number') {
+      av = Number(av) || 0;
+      bv = Number(bv) || 0;
+      return dir === 'asc' ? av - bv : bv - av;
+    }
+    av = (av || '').toString().toLowerCase();
+    bv = (bv || '').toString().toLowerCase();
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  return sorted;
+}
+
+function applySortAndFilter() {
+  const query = document.getElementById('searchBox').value.trim().toLowerCase();
+  let filtered = currentData;
+  if (query) {
+    filtered = currentData.filter(function(row) {
+      return (row.nazov_sk || '').toLowerCase().includes(query) ||
+             (row.skratka || '').toLowerCase().includes(query);
+    });
+  }
+  const sorted = sortData(filtered, sortKey, sortDir);
+  renderTable(sorted);
+}
+
+document.querySelectorAll('th').forEach(function(th) {
+  th.addEventListener('click', function() {
+    const key = th.dataset.key;
+    if (sortKey === key) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortKey = key;
+      sortDir = 'asc';
+    }
+    document.querySelectorAll('th').forEach(function(t) {
+      t.classList.remove('sorted-asc', 'sorted-desc');
+    });
+    th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    applySortAndFilter();
+  });
+});
+
+document.getElementById('searchBox').addEventListener('input', applySortAndFilter);
+
+fetch(JSON_URL)
+  .then(function(response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  })
+  .then(function(payload) {
+    currentData = payload.programs;
+    document.getElementById('updated-label').textContent =
+      'Last updated: ' + formatDate(payload.generated_at);
+    document.getElementById('dataTable').style.display = 'table';
+    applySortAndFilter();
+  })
+  .catch(function(err) {
+    document.getElementById('updated-label').textContent = '';
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    box.textContent = 'Could not load ' + JSON_URL + ': ' + err.message;
+  });
+</script>
+</body>
+</html>
