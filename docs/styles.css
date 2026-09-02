@@ -1,7 +1,7 @@
 /* ============================================================
    EU Funds Slovakia — shared design system
    Deep navy + official EU gold, frosted glass panels over a
-   fixed flag photograph. Montserrat used consistently throughout.
+   fixed sky/stars photograph. Source Serif 4 for headlines,
    Montserrat for body/UI/data.
    ============================================================ */
 
@@ -87,7 +87,7 @@ body::after {
   text-decoration: none;
   white-space: nowrap;
 }
-.brand-mark { display: block; flex-shrink: 0; border-radius: 50%; object-fit: cover; }
+.brand-mark { display: block; flex-shrink: 0; }
 .nav-links {
   display: flex;
   gap: 20px;
