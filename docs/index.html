@@ -21,9 +21,10 @@
   .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
   .search { margin-bottom: 14px; }
   .search input { padding: 8px 12px; width: 100%; max-width: 300px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
-  .scale-toggle { text-align: center; margin-bottom: 12px; font-size: 13px; color: #374151; }
+  .chart-section { margin-top: 28px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+  .scale-toggle { text-align: center; margin-bottom: 12px; font-size: 12px; color: #374151; }
   .scale-toggle label { margin-right: 20px; cursor: pointer; }
-  #fundingChart { margin-bottom: 24px; }
+  .chart-wrap { max-width: 700px; height: 280px; margin: 0 auto; }
 </style>
 </head>
 <body>
@@ -31,12 +32,6 @@
   <h1>EU Funding Programs — Slovakia 2021–2027</h1>
   <p class="subtitle">Live data from api.itms21.sk</p>
   <p class="updated" id="updated-label">Loading...</p>
-
-  <div class="scale-toggle">
-    <label><input type="radio" name="scale" value="linear" checked> Linear scale</label>
-    <label><input type="radio" name="scale" value="logarithmic"> Log scale (recommended — PSK dwarfs the rest)</label>
-  </div>
-  <canvas id="fundingChart" height="320"></canvas>
 
   <div class="search">
     <input type="text" id="searchBox" placeholder="Filter by name or code...">
@@ -58,6 +53,16 @@
       </thead>
       <tbody id="table-body"></tbody>
     </table>
+  </div>
+
+  <div class="chart-section">
+    <div class="scale-toggle">
+      <label><input type="radio" name="scale" value="linear" checked> Linear scale</label>
+      <label><input type="radio" name="scale" value="logarithmic"> Log scale (recommended — PSK dwarfs the rest)</label>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="fundingChart"></canvas>
+    </div>
   </div>
 </div>
 
@@ -128,6 +133,7 @@ function renderChart(data) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { position: 'top' },
         tooltip: {
