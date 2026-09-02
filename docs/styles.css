@@ -489,3 +489,4 @@ a:focus-visible, button:focus-visible {
   th, td { padding: 8px 8px; }
   .pagination { flex-wrap: wrap; gap: 8px; }
 }
+.ms-sheet-header[hidden] { display: none !important; }
