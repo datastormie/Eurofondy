@@ -11,12 +11,20 @@
   * { box-sizing: border-box; }
   body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; background: #f7f8fa; margin: 0; padding: 30px 16px; }
   .card { background: #fff; max-width: 1300px; margin: 0 auto; padding: 28px 32px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
-  .nav { max-width: 1300px; margin: 0 auto 14px auto; }
-  .nav a { color: #305496; text-decoration: none; font-size: 13px; font-weight: 600; }
-  .nav a:hover { text-decoration: underline; }
+
+  .nav { max-width: 1300px; margin: 0 auto 14px auto; display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn-nav {
+    display: inline-block; background: #305496; color: #fff; text-decoration: none;
+    font-size: 13px; font-weight: 600; padding: 8px 18px; border-radius: 999px;
+    font-family: 'Montserrat', Arial, Helvetica, sans-serif; border: none; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-nav:hover { background: #24406f; }
+
   h1 { text-align: center; margin-bottom: 4px; color: #1f2937; font-size: 22px; }
   .subtitle { text-align: center; color: #6b7280; margin-top: 0; margin-bottom: 4px; font-size: 14px; }
   .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 20px; }
+
   .active-filter-banner {
     display: none; background: #eef2ff; color: #305496; border: 1px solid #c7d2fe;
     border-radius: 6px; padding: 8px 14px; font-size: 13px; margin-bottom: 16px;
@@ -53,14 +61,32 @@
   }
   .filters-actions button:hover { background: #f3f4f6; }
 
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { width: 100%; min-width: 1400px; border-collapse: collapse; font-size: 12.5px; }
-  th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
-  th { background: #305496; color: #fff; cursor: pointer; user-select: none; position: sticky; top: 0; }
+  .table-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .table-toolbar .hint { font-size: 11px; color: #9ca3af; margin-right: auto; }
+  .scroll-btn {
+    border: 1px solid #d1d5db; background: #fff; color: #305496; border-radius: 6px;
+    width: 30px; height: 30px; font-size: 15px; cursor: pointer; font-family: inherit;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .scroll-btn:hover { background: #eef2ff; }
+  .scroll-btn:disabled { color: #d1d5db; cursor: not-allowed; }
+
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; }
+  table { width: 100%; min-width: 1300px; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+  th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; background: #fff; }
+  th { background: #305496; color: #fff; cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 2; }
   th:hover { background: #24406f; }
   th.sorted-asc::after { content: " \25B2"; }
   th.sorted-desc::after { content: " \25BC"; }
-  tr:hover { background: #f3f4f6; }
+  tr:hover td { background: #f3f4f6; }
+
+  /* Frozen columns: Code (1st) and Project Name (2nd) */
+  th:nth-child(1), td:nth-child(1) { position: sticky; left: 0; z-index: 1; width: 130px; min-width: 130px; }
+  th:nth-child(2), td:nth-child(2) { position: sticky; left: 130px; z-index: 1; width: 260px; min-width: 260px; white-space: normal; }
+  th:nth-child(1), th:nth-child(2) { z-index: 3; }
+  td:nth-child(1), td:nth-child(2) { box-shadow: 2px 0 4px -2px rgba(0,0,0,0.15); }
+  tr:hover td:nth-child(1), tr:hover td:nth-child(2) { background: #f3f4f6; }
+
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   td.wrap { white-space: normal; max-width: 260px; }
   .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
@@ -77,14 +103,6 @@
   .pagination button:hover:not(:disabled) { background: #eef2ff; }
   .pagination button:disabled { color: #d1d5db; cursor: not-allowed; border-color: #e5e7eb; }
 
-  .chart-section { margin-top: 32px; padding-top: 22px; border-top: 1px solid #e5e7eb; }
-  .chart-section h2 { text-align: center; font-size: 16px; color: #1f2937; margin-bottom: 4px; }
-  .chart-section .chart-subtitle { text-align: center; color: #6b7280; font-size: 12px; margin-top: 0; margin-bottom: 16px; }
-  .chart-wrap { width: 100%; height: 900px; }
-  .legend-wrap { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 18px; margin-top: 14px; font-size: 12px; color: #374151; }
-  .legend-item { display: flex; align-items: center; gap: 6px; }
-  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-
   @media (max-width: 1024px) {
     .filters { grid-template-columns: repeat(2, 1fr); }
   }
@@ -97,28 +115,32 @@
     .subtitle { font-size: 13px; }
     .filters { grid-template-columns: 1fr; }
     .filter-group.date-range { flex-direction: column; align-items: stretch; }
-    .chart-wrap { height: 700px; }
   }
 
   @media (max-width: 480px) {
     h1 { font-size: 17px; }
-    table { min-width: 1100px; font-size: 11.5px; }
+    table { min-width: 1000px; font-size: 11.5px; }
     th, td { padding: 7px 8px; }
+    th:nth-child(1), td:nth-child(1) { width: 100px; min-width: 100px; }
+    th:nth-child(2), td:nth-child(2) { left: 100px; width: 190px; min-width: 190px; }
     .pagination { flex-wrap: wrap; gap: 8px; }
-    .chart-wrap { height: 600px; }
   }
 </style>
 </head>
 <body>
-<div class="nav"><a href="index.html">← Back to Programs</a></div>
+<div class="nav">
+  <a class="btn-nav" href="index.html">← Programs</a>
+  <a class="btn-nav" href="top_projects_chart.html">Top 50 Projects →</a>
+  <a class="btn-nav" href="top_recipients_chart.html">Top 25 Recipients →</a>
+</div>
 <div class="card">
   <h1>EU Funded Projects — Slovakia 2021–2027</h1>
   <p class="subtitle">Live data from api.itms21.sk</p>
   <p class="updated" id="updated-label">Loading...</p>
 
   <div class="active-filter-banner" id="activeFilterBanner">
-    Showing projects for program: <strong id="activeFilterLabel"></strong>
-    <button id="clearProgramFilter">Clear</button>
+    <span id="activeFilterText"></span> <strong id="activeFilterLabel"></strong>
+    <button id="clearActiveFilter">Clear</button>
   </div>
 
   <div class="filters">
@@ -131,12 +153,15 @@
       <input type="text" id="filterNazov" placeholder="Search by name...">
     </div>
     <div class="filter-group">
+      <label for="filterRecipient">Recipient</label>
+      <input type="text" id="filterRecipient" placeholder="Search by recipient...">
+    </div>
+    <div class="filter-group">
       <label for="filterProgram">Program</label>
       <select id="filterProgram">
         <option value="">All programs</option>
       </select>
     </div>
-    <div></div>
 
     <div class="filter-group date-range">
       <div>
@@ -166,11 +191,17 @@
 
   <div id="table-container">
     <p class="error" style="display:none;" id="error-box"></p>
-    <div class="table-scroll">
+
+    <div class="table-toolbar">
+      <span class="hint">Code &amp; Project Name stay frozen while scrolling →</span>
+      <button class="scroll-btn" id="scrollLeftBtn" title="Scroll left">←</button>
+      <button class="scroll-btn" id="scrollRightBtn" title="Scroll right">→</button>
+    </div>
+
+    <div class="table-scroll" id="tableScroll">
       <table id="dataTable" style="display:none;">
         <thead>
           <tr>
-            <th data-key="project_id" data-type="number">ID</th>
             <th data-key="kod" data-type="string">Code</th>
             <th data-key="nazov" data-type="string">Project Name</th>
             <th data-key="program_skratka" data-type="string">Program</th>
@@ -202,25 +233,10 @@
       <button id="nextPage">Next →</button>
     </div>
   </div>
-
-  <div class="chart-section">
-    <h2>Top 50 Most Expensive Projects</h2>
-    <p class="chart-subtitle">By contracted amount, colored by program</p>
-    <div class="chart-wrap">
-      <canvas id="topProjectsChart"></canvas>
-    </div>
-    <div class="legend-wrap" id="chartLegend"></div>
-  </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="projects_logic.js"></script>
 <script>
-const HAS_CHART = typeof Chart !== 'undefined';
-if (HAS_CHART) {
-  Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
-}
-
 const JSON_URL = 'project_data.json';
 const PAGE_SIZE = 25;
 
@@ -228,10 +244,6 @@ let allData = [];
 let currentPage = 1;
 let sortKey = 'celkova_zazmluvnena_suma';
 let sortDir = 'desc';
-let topChart = null;
-
-const PROGRAM_COLORS = ['#305496', '#8FAADC', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646', '#B8860B', '#2E8B57', '#6A5ACD'];
-let programColorMap = {};
 
 function typeOf(key) {
   const th = document.querySelector('th[data-key="' + key + '"]');
@@ -243,24 +255,11 @@ function formatEUR(value) {
   return '€' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
-function formatEURShort(value) {
-  if (value >= 1e9) return (value / 1e9).toFixed(2) + ' B';
-  if (value >= 1e6) return (value / 1e6).toFixed(1) + ' M';
-  if (value >= 1e3) return (value / 1e3).toFixed(0) + ' K';
-  return Number(value).toLocaleString();
-}
-
 function formatDateValue(value) {
   if (value == null || value === '') return '';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function dateValueToMs(value) {
-  if (value == null || value === '') return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.getTime();
 }
 
 function formatIsoDate(iso) {
@@ -278,6 +277,7 @@ function getFilters() {
   return {
     kod: document.getElementById('filterKod').value.trim(),
     nazov: document.getElementById('filterNazov').value.trim(),
+    recipient: document.getElementById('filterRecipient').value.trim(),
     program: document.getElementById('filterProgram').value,
     zaciatokFrom: dateInputToMs(document.getElementById('filterZaciatokFrom').value, false),
     zaciatokTo: dateInputToMs(document.getElementById('filterZaciatokTo').value, true),
@@ -295,9 +295,6 @@ function populateProgramDropdown(data) {
     opt.textContent = p.skratka;
     select.appendChild(opt);
   });
-  programs.forEach(function (p, i) {
-    programColorMap[p.skratka] = PROGRAM_COLORS[i % PROGRAM_COLORS.length];
-  });
 }
 
 function renderTableRows(rows) {
@@ -306,7 +303,6 @@ function renderTableRows(rows) {
   rows.forEach(function (row) {
     const tr = document.createElement('tr');
     tr.innerHTML =
-      '<td>' + (row.project_id != null ? row.project_id : '') + '</td>' +
       '<td>' + (row.kod || '') + '</td>' +
       '<td class="wrap">' + (row.nazov || '') + '</td>' +
       '<td>' + (row.program_skratka || '') + '</td>' +
@@ -379,13 +375,13 @@ document.querySelectorAll('th').forEach(function (th) {
   });
 });
 
-['filterKod', 'filterNazov', 'filterProgram', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'].forEach(function (id) {
+['filterKod', 'filterNazov', 'filterRecipient', 'filterProgram', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'].forEach(function (id) {
   document.getElementById(id).addEventListener('input', function () { currentPage = 1; render(); });
   document.getElementById(id).addEventListener('change', function () { currentPage = 1; render(); });
 });
 
 document.getElementById('resetFilters').addEventListener('click', function () {
-  ['filterKod', 'filterNazov', 'filterProgram', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'].forEach(function (id) {
+  ['filterKod', 'filterNazov', 'filterRecipient', 'filterProgram', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'].forEach(function (id) {
     document.getElementById(id).value = '';
   });
   document.getElementById('activeFilterBanner').style.display = 'none';
@@ -393,8 +389,9 @@ document.getElementById('resetFilters').addEventListener('click', function () {
   render();
 });
 
-document.getElementById('clearProgramFilter').addEventListener('click', function () {
+document.getElementById('clearActiveFilter').addEventListener('click', function () {
   document.getElementById('filterProgram').value = '';
+  document.getElementById('filterRecipient').value = '';
   document.getElementById('activeFilterBanner').style.display = 'none';
   currentPage = 1;
   render();
@@ -409,94 +406,27 @@ document.getElementById('nextPage').addEventListener('click', function () {
   render();
 });
 
-function renderTopChart(data) {
-  if (!HAS_CHART) {
-    document.querySelector('.chart-section').style.display = 'none';
-    return;
-  }
-  const top50 = ProjectsLogic.topNByAmount(data, 50, 'celkova_zazmluvnena_suma');
-  // Chart.js horizontal bars read bottom-to-top, so reverse to show highest at top
-  const ordered = [...top50].reverse();
+document.getElementById('scrollLeftBtn').addEventListener('click', function () {
+  document.getElementById('tableScroll').scrollBy({ left: -250, behavior: 'smooth' });
+});
+document.getElementById('scrollRightBtn').addEventListener('click', function () {
+  document.getElementById('tableScroll').scrollBy({ left: 250, behavior: 'smooth' });
+});
 
-  const labels = ordered.map(function (p) {
-    const name = p.nazov || p.kod || ('#' + p.project_id);
-    return name.length > 55 ? name.slice(0, 52) + '…' : name;
-  });
-  const fullNames = ordered.map(function (p) { return p.nazov || ''; });
-  const programs = ordered.map(function (p) { return p.program_skratka || ''; });
-  const programNames = ordered.map(function (p) { return p.program_nazov || ''; });
-  const amounts = ordered.map(function (p) { return p.celkova_zazmluvnena_suma; });
-  const colors = programs.map(function (p) { return programColorMap[p] || '#9ca3af'; });
-
-  const ctx = document.getElementById('topProjectsChart').getContext('2d');
-  if (topChart) topChart.destroy();
-
-  topChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Contracted amount',
-        data: amounts,
-        backgroundColor: colors,
-        borderRadius: 3,
-      }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title: function (items) { return fullNames[items[0].dataIndex]; },
-            label: function (item) {
-              const i = item.dataIndex;
-              return [
-                'Program: ' + programs[i] + ' — ' + programNames[i],
-                'Contracted: €' + Number(amounts[i]).toLocaleString(undefined, { maximumFractionDigits: 0 })
-              ];
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          beginAtZero: true,
-          ticks: { callback: function (v) { return '€' + formatEURShort(v); } },
-          title: { display: true, text: 'Contracted amount (EUR)' }
-        },
-        y: {
-          ticks: { autoSkip: false, font: { size: 10 } }
-        }
-      }
-    }
-  });
-
-  renderLegend(programs);
-}
-
-function renderLegend(usedPrograms) {
-  const legendWrap = document.getElementById('chartLegend');
-  legendWrap.innerHTML = '';
-  const unique = Array.from(new Set(usedPrograms)).sort();
-  unique.forEach(function (skratka) {
-    const item = document.createElement('div');
-    item.className = 'legend-item';
-    item.innerHTML =
-      '<span class="legend-swatch" style="background:' + (programColorMap[skratka] || '#9ca3af') + '"></span>' +
-      '<span>' + skratka + '</span>';
-    legendWrap.appendChild(item);
-  });
-}
-
-function applyProgramFromUrl() {
+function applyFiltersFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const program = params.get('program');
+  const recipient = params.get('recipient');
+
   if (program) {
     document.getElementById('filterProgram').value = program;
+    document.getElementById('activeFilterText').textContent = 'Showing projects for program:';
     document.getElementById('activeFilterLabel').textContent = program;
+    document.getElementById('activeFilterBanner').style.display = 'block';
+  } else if (recipient) {
+    document.getElementById('filterRecipient').value = recipient;
+    document.getElementById('activeFilterText').textContent = 'Showing projects for recipient:';
+    document.getElementById('activeFilterLabel').textContent = recipient;
     document.getElementById('activeFilterBanner').style.display = 'block';
   }
 }
@@ -510,9 +440,8 @@ fetch(JSON_URL)
     allData = payload.projects;
     document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
     populateProgramDropdown(allData);
-    applyProgramFromUrl();
+    applyFiltersFromUrl();
     render();
-    renderTopChart(allData);
   })
   .catch(function (err) {
     document.getElementById('updated-label').textContent = '';

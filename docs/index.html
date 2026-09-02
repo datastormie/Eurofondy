@@ -11,13 +11,22 @@
   * { box-sizing: border-box; }
   body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; background: #f7f8fa; margin: 0; padding: 30px 16px; }
   .card { background: #fff; max-width: 1100px; margin: 0 auto; padding: 28px 32px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
-  .nav { max-width: 1100px; margin: 0 auto 14px auto; text-align: right; }
-  .nav a { color: #305496; text-decoration: none; font-size: 13px; font-weight: 600; }
-  .nav a:hover { text-decoration: underline; }
+  .nav { max-width: 1100px; margin: 0 auto 14px auto; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+  .btn-nav {
+    display: inline-block; background: #305496; color: #fff; text-decoration: none;
+    font-size: 13px; font-weight: 600; padding: 8px 18px; border-radius: 999px;
+    font-family: 'Montserrat', Arial, Helvetica, sans-serif; border: none; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-nav:hover { background: #24406f; }
   h1 { text-align: center; margin-bottom: 4px; color: #1f2937; font-size: 22px; }
   .subtitle { text-align: center; color: #6b7280; margin-top: 0; margin-bottom: 4px; font-size: 14px; }
-  .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 8px; }
-  .hint { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 20px; font-style: italic; }
+  .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 14px; }
+  .hint {
+    text-align: center; margin: 0 auto 22px auto; max-width: 420px;
+    background: #eef2ff; color: #305496; border: 1px solid #c7d2fe; border-radius: 999px;
+    padding: 8px 18px; font-size: 13px; font-weight: 600;
+  }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
@@ -56,12 +65,16 @@
 </style>
 </head>
 <body>
-<div class="nav"><a href="projects.html">View Projects →</a></div>
+<div class="nav">
+  <a class="btn-nav" href="projects.html">View Projects →</a>
+  <a class="btn-nav" href="top_projects_chart.html">Top 50 Projects →</a>
+  <a class="btn-nav" href="top_recipients_chart.html">Top 25 Recipients →</a>
+</div>
 <div class="card">
   <h1>EU Funding Programs — Slovakia 2021–2027</h1>
   <p class="subtitle">Live data from api.itms21.sk</p>
   <p class="updated" id="updated-label">Loading...</p>
-  <p class="hint">Click a program row to see its projects</p>
+  <p class="hint">👉 Click a program row to see its projects</p>
 
   <div class="search">
     <input type="text" id="searchBox" placeholder="Filter by name or code...">
