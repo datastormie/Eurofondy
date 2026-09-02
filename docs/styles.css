@@ -18,7 +18,7 @@
   --hairline: #e4e7ee;
   --radius-card: 16px;
   --radius-control: 8px;
-  --font-display: 'Source Serif 4', Georgia, serif;
+  --font-display: 'Montserrat', Arial, Helvetica, sans-serif;
   --font-body: 'Montserrat', Arial, Helvetica, sans-serif;
 }
 
@@ -278,6 +278,8 @@ th.sorted-desc::after { content: " \25BC"; color: var(--eu-gold); }
 tbody tr { cursor: default; }
 tr:hover td { background: #f2f5fb; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td a { color: var(--eu-blue); text-decoration: none; font-weight: 600; }
+td a:hover { text-decoration: underline; }
 td.wrap { white-space: normal; max-width: 260px; }
 .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
 .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 24px; }

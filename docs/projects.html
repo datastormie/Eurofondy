@@ -6,7 +6,7 @@
 <title>EU Funded Projects — Slovakia 2021–2027</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <style>
   .card { max-width: 1300px; }
@@ -89,6 +89,8 @@
       <button class="btn-secondary" id="resetFilters">Reset filters</button>
     </div>
   </div>
+
+  <p class="hint">Tip: click a recipient's ICO to open their FinStat company profile in a new tab.</p>
 
   <div id="table-container">
     <p class="error" style="display:none;" id="error-box"></p>
@@ -198,6 +200,21 @@ function populateProgramDropdown(data) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatIcoLink(ico) {
+  if (!ico) return '';
+  const safeIco = escapeHtml(ico);
+  const urlIco = encodeURIComponent(ico);
+  return '<a href="https://finstat.sk/' + urlIco + '" target="_blank" rel="noopener noreferrer">' + safeIco + '</a>';
+}
+
 function renderTableRows(rows) {
   const tbody = document.getElementById('table-body');
   tbody.innerHTML = '';
@@ -209,7 +226,7 @@ function renderTableRows(rows) {
       '<td>' + (row.program_skratka || '') + '</td>' +
       '<td class="wrap">' + (row.program_nazov || '') + '</td>' +
       '<td class="wrap">' + (row.prijimatel_nazov || '') + '</td>' +
-      '<td>' + (row.prijimatel_ico || '') + '</td>' +
+      '<td>' + formatIcoLink(row.prijimatel_ico) + '</td>' +
       '<td>' + (row.stav || '') + '</td>' +
       '<td>' + (row.vrealizacii ? 'Yes' : 'No') + '</td>' +
       '<td>' + (row.ukonceny ? 'Yes' : 'No') + '</td>' +
