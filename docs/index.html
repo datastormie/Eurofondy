@@ -8,12 +8,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  * { box-sizing: border-box; }
   body { font-family: 'Montserrat', Arial, Helvetica, sans-serif; background: #f7f8fa; margin: 0; padding: 30px 16px; }
   .card { background: #fff; max-width: 1100px; margin: 0 auto; padding: 28px 32px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
   h1 { text-align: center; margin-bottom: 4px; color: #1f2937; font-size: 22px; }
   .subtitle { text-align: center; color: #6b7280; margin-top: 0; margin-bottom: 4px; font-size: 14px; }
   .updated { text-align: center; color: #9ca3af; font-size: 12px; margin-bottom: 20px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
   th { background: #305496; color: #fff; cursor: pointer; user-select: none; white-space: nowrap; }
   th:hover { background: #24406f; }
@@ -26,8 +28,25 @@
   .search input { padding: 8px 12px; width: 100%; max-width: 300px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-family: 'Montserrat', Arial, Helvetica, sans-serif; }
   .chart-section { margin-top: 28px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
   .scale-toggle { text-align: center; margin-bottom: 12px; font-size: 12px; color: #374151; }
-  .scale-toggle label { margin-right: 20px; cursor: pointer; }
+  .scale-toggle label { margin-right: 20px; cursor: pointer; display: inline-block; }
   .chart-wrap { max-width: 700px; height: 280px; margin: 0 auto; }
+
+  @media (max-width: 768px) {
+    body { padding: 16px 8px; }
+    .card { padding: 20px 16px; border-radius: 8px; }
+    h1 { font-size: 19px; }
+    .subtitle { font-size: 13px; }
+    .search input { max-width: 100%; }
+    .chart-wrap { height: 240px; }
+  }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 17px; }
+    table { min-width: 560px; font-size: 12px; }
+    th, td { padding: 8px 8px; }
+    .scale-toggle label { display: block; margin: 0 0 8px 0; }
+    .chart-wrap { height: 220px; }
+  }
 </style>
 </head>
 <body>
@@ -42,20 +61,22 @@
 
   <div id="table-container">
     <p class="error" style="display:none;" id="error-box"></p>
-    <table id="dataTable" style="display:none;">
-      <thead>
-        <tr>
-          <th data-key="skratka" data-type="string">Code</th>
-          <th data-key="nazov_sk" data-type="string">Program</th>
-          <th data-key="typ_programu" data-type="string">Type</th>
-          <th data-key="suma_eu" data-type="number">EU (€)</th>
-          <th data-key="suma_sr" data-type="number">SR (€)</th>
-          <th data-key="suma_spolu" data-type="number">Total (€)</th>
-          <th data-key="subjekt_nazov" data-type="string">Managing Body</th>
-        </tr>
-      </thead>
-      <tbody id="table-body"></tbody>
-    </table>
+    <div class="table-scroll">
+      <table id="dataTable" style="display:none;">
+        <thead>
+          <tr>
+            <th data-key="skratka" data-type="string">Code</th>
+            <th data-key="nazov_sk" data-type="string">Program</th>
+            <th data-key="typ_programu" data-type="string">Type</th>
+            <th data-key="suma_eu" data-type="number">EU (€)</th>
+            <th data-key="suma_sr" data-type="number">SR (€)</th>
+            <th data-key="suma_spolu" data-type="number">Total (€)</th>
+            <th data-key="subjekt_nazov" data-type="string">Managing Body</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="chart-section">
