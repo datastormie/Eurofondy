@@ -21,6 +21,9 @@
   .error { color: #b91c1c; text-align: center; font-size: 14px; padding: 20px; }
   .search { margin-bottom: 14px; }
   .search input { padding: 8px 12px; width: 100%; max-width: 300px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+  .scale-toggle { text-align: center; margin-bottom: 12px; font-size: 13px; color: #374151; }
+  .scale-toggle label { margin-right: 20px; cursor: pointer; }
+  #fundingChart { margin-bottom: 24px; }
 </style>
 </head>
 <body>
@@ -28,6 +31,12 @@
   <h1>EU Funding Programs — Slovakia 2021–2027</h1>
   <p class="subtitle">Live data from api.itms21.sk</p>
   <p class="updated" id="updated-label">Loading...</p>
+
+  <div class="scale-toggle">
+    <label><input type="radio" name="scale" value="linear" checked> Linear scale</label>
+    <label><input type="radio" name="scale" value="logarithmic"> Log scale (recommended — PSK dwarfs the rest)</label>
+  </div>
+  <canvas id="fundingChart" height="320"></canvas>
 
   <div class="search">
     <input type="text" id="searchBox" placeholder="Filter by name or code...">
@@ -52,11 +61,13 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 const JSON_URL = 'program_data.json';
 let currentData = [];
 let sortKey = 'suma_spolu';
 let sortDir = 'desc';
+let fundingChart = null;
 
 function formatEUR(value) {
   if (value == null) return '';
@@ -84,6 +95,76 @@ function renderTable(data) {
     tbody.appendChild(tr);
   });
 }
+
+function formatEURShort(value) {
+  if (value >= 1e9) return (value / 1e9).toFixed(2) + ' B';
+  if (value >= 1e6) return (value / 1e6).toFixed(1) + ' M';
+  return Number(value).toLocaleString();
+}
+
+function renderChart(data) {
+  // Chart always shows all programs sorted by total, regardless of table sort/filter
+  const sorted = [...data].sort(function(a, b) { return b.suma_spolu - a.suma_spolu; });
+
+  const labels = sorted.map(function(d) { return d.skratka; });
+  const fullNames = sorted.map(function(d) { return d.nazov_sk; });
+  const euData = sorted.map(function(d) { return d.suma_eu; });
+  const srData = sorted.map(function(d) { return d.suma_sr; });
+
+  const ctx = document.getElementById('fundingChart').getContext('2d');
+
+  if (fundingChart) {
+    fundingChart.destroy();
+  }
+
+  fundingChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'EU contribution', data: euData, backgroundColor: '#305496', borderRadius: 3 },
+        { label: 'National (SR) contribution', data: srData, backgroundColor: '#8FAADC', borderRadius: 3 }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: {
+          callbacks: {
+            title: function(items) { return fullNames[items[0].dataIndex]; },
+            label: function(item) {
+              return item.dataset.label + ': €' + item.raw.toLocaleString(undefined, { maximumFractionDigits: 0 });
+            },
+            footer: function(items) {
+              const total = items.reduce(function(sum, item) { return sum + item.raw; }, 0);
+              return 'Total: €' + total.toLocaleString(undefined, { maximumFractionDigits: 0 });
+            }
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true },
+        y: {
+          stacked: true,
+          type: 'linear',
+          beginAtZero: true,
+          ticks: { callback: function(value) { return '€' + formatEURShort(value); } },
+          title: { display: true, text: 'EUR' }
+        }
+      }
+    }
+  });
+}
+
+document.querySelectorAll('input[name="scale"]').forEach(function(radio) {
+  radio.addEventListener('change', function(e) {
+    if (!fundingChart) return;
+    fundingChart.options.scales.y.type = e.target.value;
+    fundingChart.options.scales.y.min = e.target.value === 'logarithmic' ? 1e6 : undefined;
+    fundingChart.update();
+  });
+});
 
 function sortData(data, key, dir) {
   const type = document.querySelector('th[data-key="' + key + '"]').dataset.type;
@@ -145,6 +226,7 @@ fetch(JSON_URL)
     document.getElementById('updated-label').textContent =
       'Last updated: ' + formatDate(payload.generated_at);
     document.getElementById('dataTable').style.display = 'table';
+    renderChart(currentData);
     applySortAndFilter();
   })
   .catch(function(err) {
