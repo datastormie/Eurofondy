@@ -1,13 +1,13 @@
 """
-Fetches the project list from api.itms21.sk, detects which projects are new
-or changed since the last run (using the list endpoint's updatedAt), fetches
-full details ONLY for those, and maintains a current-state table in DuckDB
-(no daily history — with thousands of projects, a full daily snapshot would
-make the repo grow without bound).
+Fetches the project list from api.itms21.sk, detects which project ids are
+not yet stored in DuckDB, and fetches full details ONLY for those new ids.
+Projects already stored are never re-fetched and never deleted, even if they
+disappear from the API list — the table only ever grows (purely additive
+incremental sync).
 
-Exports the current state to docs/project_data.json for the projects.html page.
+Exports the current table to docs/project_data.json for the projects.html page.
 
-Run daily via GitHub Actions (.github/workflows/daily.yml).
+Run weekly via GitHub Actions (.github/workflows/weekly.yml).
 """
 
 import json
@@ -127,10 +127,10 @@ def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
     """)
 
 
-def get_known_updated_ats(con: duckdb.DuckDBPyConnection) -> dict[int, int]:
-    """Map of project_id -> updated_at already stored, to detect changes."""
-    rows = con.execute(f"SELECT project_id, updated_at FROM {TABLE_CURRENT}").fetchall()
-    return {row[0]: row[1] for row in rows}
+def get_known_ids(con: duckdb.DuckDBPyConnection) -> set[int]:
+    """Set of project_id values already stored, so we never re-fetch them."""
+    rows = con.execute(f"SELECT project_id FROM {TABLE_CURRENT}").fetchall()
+    return {row[0] for row in rows}
 
 
 def upsert_row(con: duckdb.DuckDBPyConnection, row: dict) -> None:
@@ -171,7 +171,10 @@ def upsert_row(con: duckdb.DuckDBPyConnection, row: dict) -> None:
 
 
 def sync_projects() -> tuple[int, int, int]:
-    """Fetch the list, detect changes, fetch details only for new/changed projects.
+    """Fetch the list, then fetch full details only for ids not already stored.
+
+    Existing rows are left untouched (no re-fetch) and nothing is ever deleted,
+    even if a project drops out of the current API list.
 
     Returns (total_in_list, fetched_count, failed_count).
     """
@@ -183,16 +186,11 @@ def sync_projects() -> tuple[int, int, int]:
     list_items = fetch_list()
     print(f"List returned {len(list_items)} projects.")
 
-    known = get_known_updated_ats(con)
+    known_ids = get_known_ids(con)
 
-    to_fetch = []
-    for item in list_items:
-        pid = item.get("id")
-        list_updated_at = item.get("updatedAt")
-        if pid not in known or known[pid] != list_updated_at:
-            to_fetch.append(pid)
+    to_fetch = [item.get("id") for item in list_items if item.get("id") not in known_ids]
 
-    print(f"{len(to_fetch)} project(s) are new or changed; {len(list_items) - len(to_fetch)} unchanged (skipped).")
+    print(f"{len(to_fetch)} new project(s) to fetch; {len(list_items) - len(to_fetch)} already stored (skipped).")
 
     fetched_count = 0
     failed_count = 0
@@ -214,14 +212,6 @@ def sync_projects() -> tuple[int, int, int]:
                     con.commit()  # periodic commit so progress survives an interruption
                     print(f"  Progress: {i}/{len(to_fetch)} processed "
                           f"({fetched_count} ok, {failed_count} failed)")
-
-    con.commit()
-
-    # Remove projects from our table that no longer appear in the list at all (e.g. deleted)
-    current_ids = [item.get("id") for item in list_items]
-    if current_ids:
-        placeholders = ",".join("?" for _ in current_ids)
-        con.execute(f"DELETE FROM {TABLE_CURRENT} WHERE project_id NOT IN ({placeholders})", current_ids)
 
     con.commit()
     con.close()
@@ -256,7 +246,7 @@ def export_to_json() -> None:
 
 def main():
     total, fetched, failed = sync_projects()
-    print(f"Done. {total} total in list, {fetched} fetched/updated, {failed} failed.")
+    print(f"Done. {total} total in list, {fetched} newly fetched, {failed} failed.")
     export_to_json()
 
 
