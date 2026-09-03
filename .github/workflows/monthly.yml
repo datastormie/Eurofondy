@@ -1,8 +1,8 @@
-name: Weekly fetch of EU program data
+name: Monthly fetch of EU program data
 
 on:
   schedule:
-    - cron: "0 5 * * 1"
+    - cron: "0 5 1 * *"
   workflow_dispatch: {}
 
 permissions:
@@ -46,7 +46,7 @@ jobs:
           gh release view data-store --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create data-store --repo "$GITHUB_REPOSITORY" \
                  --title "Data store (not a versioned release)" \
-                 --notes "Holds eurofondy.duckdb so the incremental fetch scripts can persist state between weekly runs. Not a code release — do not delete unless you want to force a full re-fetch."
+                 --notes "Holds eurofondy.duckdb so the incremental fetch scripts can persist state between monthly runs. Not a code release — do not delete unless you want to force a full re-fetch."
           gh release upload data-store data/eurofondy.duckdb --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Commit and push updated data

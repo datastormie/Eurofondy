@@ -7,7 +7,7 @@ programs that no longer appear in the API response are left untouched
 
 Exports the current table to docs/program_data.json for the published web page.
 
-Run weekly via GitHub Actions (.github/workflows/weekly.yml).
+Run monthly via GitHub Actions (.github/workflows/monthly.yml).
 """
 
 import json

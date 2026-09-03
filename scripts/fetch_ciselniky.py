@@ -12,7 +12,7 @@ DuckDB tables, mirroring the source API/table names:
 
 DuckDB-only: there is no JSON export / website page for this data.
 
-Run weekly via GitHub Actions (.github/workflows/weekly.yml).
+Run monthly via GitHub Actions (.github/workflows/monthly.yml).
 """
 
 import time

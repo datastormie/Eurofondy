@@ -18,7 +18,7 @@ Each detail fetched this way is stored twice, from the same API response:
     DuckDB. Rows are inserted once and never updated/deleted, gated by the
     same "id not yet known" check as the simple table above.
 
-Run weekly via GitHub Actions (.github/workflows/weekly.yml).
+Run monthly via GitHub Actions (.github/workflows/monthly.yml).
 """
 
 import json
