@@ -1,2 +1,4 @@
 .playwright-mcp/
 __pycache__/
+data/*.duckdb
+data/*.duckdb.wal

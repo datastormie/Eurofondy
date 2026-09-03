@@ -5,7 +5,18 @@ Projects already stored are never re-fetched and never deleted, even if they
 disappear from the API list — the table only ever grows (purely additive
 incremental sync).
 
-Exports the current table to docs/project_data.json for the projects.html page.
+Each detail fetched this way is stored twice, from the same API response:
+  - a flat summary row in `projects_current`, which feeds docs/project_data.json
+    for the projects.html page (unchanged from before).
+  - the full nested detail, decomposed into a normalized PROJEKT table plus
+    ~30 PROJEKT_* child/grandchild tables (one row per inner list item, e.g.
+    PROJEKT_FINANCNYPLAN, PROJEKT_AKTIVITY, PROJEKT_ZMENAPROJEKT_DOKUMENT...).
+    Every one of those tables carries a PROJECT_ID (and, where the item is
+    nested two levels deep, its immediate parent row id) so they can all be
+    joined back to PROJEKT. This richer schema is NOT used by the website —
+    it exists purely so every inner attribute of a project is queryable in
+    DuckDB. Rows are inserted once and never updated/deleted, gated by the
+    same "id not yet known" check as the simple table above.
 
 Run weekly via GitHub Actions (.github/workflows/weekly.yml).
 """
@@ -33,13 +44,23 @@ REQUEST_TIMEOUT = 30
 RETRY_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 2
 
+LIST_REQUEST_TIMEOUT = 180  # the list endpoint returns every project in one response (limit=-1)
+
 
 def fetch_list() -> list[dict]:
-    """Call the list endpoint and return all project summary records."""
-    resp = requests.get(LIST_URL, timeout=60)
-    resp.raise_for_status()
-    payload = resp.json()
-    return payload["results"]
+    """Call the list endpoint and return all project summary records, with
+    retry on failure — this single response can be large/slow enough to time out."""
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            resp = requests.get(LIST_URL, timeout=LIST_REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            payload = resp.json()
+            return payload["results"]
+        except requests.RequestException as e:
+            if attempt == RETRY_ATTEMPTS:
+                raise
+            print(f"  List fetch failed (attempt {attempt}/{RETRY_ATTEMPTS}): {e}")
+            time.sleep(RETRY_BACKOFF_SECONDS * attempt)
 
 
 def fetch_detail(project_id: int) -> dict | None:
@@ -127,9 +148,334 @@ def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
     """)
 
 
+def _get(d: dict | None, path: str):
+    """Walk a dotted path through nested dicts; None if any segment is missing/None."""
+    cur = d
+    for part in path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+    return cur
+
+
+# --- Full normalized schema -------------------------------------------------
+# Mirrors the ITMS21 "projekt" detail endpoint field-by-field (see module
+# docstring). column_name -> (dotted path in the raw detail JSON, DuckDB type).
+
+TABLE_PROJEKT = "PROJEKT"
+
+PROJEKT_COLUMNS: list[tuple[str, str, str]] = [
+    ("ID", "id", "BIGINT"),
+    ("HREF", "href", "VARCHAR"),
+    ("KOD", "kod", "VARCHAR"),
+    ("NAZOV", "nazov", "VARCHAR"),
+    ("AKRONYM", "akronym", "VARCHAR"),
+    ("STAV", "stav", "VARCHAR"),
+    ("MRK", "mrk", "VARCHAR"),
+    ("ZAMERANIEPROJEKTU", "zameranieProjektu", "VARCHAR"),
+    ("UCEL", "ucel", "VARCHAR"),
+    ("POPIS", "popis", "VARCHAR"),
+    ("POPISKAPACITYPRIJIMATELA", "popisKapacityPrijimatela", "VARCHAR"),
+    ("POPISSITUACIEPOREALIZACII", "popisSituaciePoRealizacii", "VARCHAR"),
+    ("POPISSPOSOBUREALIZACIE", "popisSposobuRealizacie", "VARCHAR"),
+    ("POPISVYCHODISKOVEJSITUACIE", "popisVychodiskovejSituacie", "VARCHAR"),
+    ("CELKOVAZAZMLUVNENASUMA", "celkovaZazmluvnenaSuma", "DOUBLE"),
+    ("CELKOVAZAZMLUVNENASUMAPOVODNA", "celkovaZazmluvnenaSumaPovodna", "DOUBLE"),
+    ("ZAZMLUVNENASUMANFP", "zazmluvnenaSumaNfp", "DOUBLE"),
+    ("POSKYTNUTEPROSTRIEDKY", "poskytnuteProstriedky", "DOUBLE"),
+    ("DATUMZACIATKUHLAVNYCHAKTIVIT", "datumZaciatkuHlavnychAktivit", "BIGINT"),
+    ("DATUMKONCAHLAVNYCHAKTIVIT", "datumKoncaHlavnychAktivit", "BIGINT"),
+    ("DLZKACELKOVAHLAVNYCHAKTIVIT", "dlzkaCelkovaHlavnychAktivit", "INTEGER"),
+    ("DLZKACELKOVAPROJEKTU", "dlzkaCelkovaProjektu", "INTEGER"),
+    ("PLANOVANAREALIZACIAZACIATOK", "planovanaRealizaciaZaciatok", "BIGINT"),
+    ("PLANOVANAREALIZACIAKONIEC", "planovanaRealizaciaKoniec", "BIGINT"),
+    ("SKUTOCNAREALIZACIAZACIATOK", "skutocnaRealizaciaZaciatok", "BIGINT"),
+    ("SKUTOCNAREALIZACIAKONIEC", "skutocnaRealizaciaKoniec", "BIGINT"),
+    ("JEOTVORENAZMENA", "jeOtvorenaZmena", "BOOLEAN"),
+    ("MAKATEGORIUREGIONOV", "maKategoriuRegionov", "BOOLEAN"),
+    ("MIMORIADNEUKONCENYNEPRISPEL", "mimoriadneUkoncenyNeprispel", "BOOLEAN"),
+    ("MIMORIADNEUKONCENYPRISPEL", "mimoriadneUkoncenyPrispel", "BOOLEAN"),
+    ("OBSAHUJEMIESTOREALIZACIEZAHRANICIE", "obsahujeMiestoRealizacieZahranicie", "BOOLEAN"),
+    ("REALIZACIAAKTIVITPOZASTAVENA", "realizaciaAktivitPozastavena", "BOOLEAN"),
+    ("UDRZATELNYROZVOJMIEST", "udrzatelnyRozvojMiest", "BOOLEAN"),
+    ("UKONCENY", "ukonceny", "BOOLEAN"),
+    ("VREALIZACII", "vrealizacii", "BOOLEAN"),
+    ("VYLUCENYZFINANCOVANIA", "vylucenyZFinancovania", "BOOLEAN"),
+    ("PRIJIMATEL_ID", "prijimatel.id", "BIGINT"),
+    ("PROGRAM_ID", "program.id", "BIGINT"),
+    ("VYZVA_ID", "vyzva.id", "BIGINT"),
+    ("ZONFP_ID", "zonfp.id", "BIGINT"),
+    ("POSKYTOVATELORGAN_ID", "poskytovatelOrgan.id", "BIGINT"),
+    ("POSKYTOVATELORGAN_KOD", "poskytovatelOrgan.kod", "VARCHAR"),
+    ("POSKYTOVATELORGAN_NAZOV", "poskytovatelOrgan.nazov", "VARCHAR"),
+    ("POSKYTOVATELSUBJEKT_ID", "poskytovatelSubjekt.id", "BIGINT"),
+    ("VYHLASOVATELORGAN_ID", "vyhlasovatelOrgan.id", "BIGINT"),
+    ("VYHLASOVATELORGAN_KOD", "vyhlasovatelOrgan.kod", "VARCHAR"),
+    ("VYHLASOVATELORGAN_NAZOV", "vyhlasovatelOrgan.nazov", "VARCHAR"),
+    ("ZMLUVAPROJEKT_ID", "zmluvaProjekt.id", "BIGINT"),
+    ("ZMLUVAPROJEKT_CISLO", "zmluvaProjekt.cislo", "VARCHAR"),
+    ("ZMLUVAPROJEKT_DATUMPLATNOSTI", "zmluvaProjekt.datumPlatnosti", "BIGINT"),
+    ("ZMLUVAPROJEKT_DATUMUCINNOSTI", "zmluvaProjekt.datumUcinnosti", "BIGINT"),
+    ("ZMLUVAPROJEKT_URL", "zmluvaProjekt.url", "VARCHAR"),
+    ("CREATEDAT", "createdAt", "BIGINT"),
+    ("UPDATEDAT", "updatedAt", "BIGINT"),
+]
+
+# table_name -> (source list field in the detail JSON, [(column, path-within-item, type), ...])
+CHILD_TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
+    "PROJEKT_AKTIVITY": ("aktivity", [("ID", "id", "BIGINT")]),
+    "PROJEKT_CIELOVASKUPINA": ("cielovaSkupina", [("ID", "id", "BIGINT")]),
+    "PROJEKT_DODAVATEL": ("dodavatel", [
+        ("DIC", "dic", "VARCHAR"),
+        ("ICO", "ico", "VARCHAR"),
+        ("INEIDENTIFIKACNECISLO", "ineIdentifikacneCislo", "VARCHAR"),
+        ("NAZOV", "nazov", "VARCHAR"),
+    ]),
+    "PROJEKT_FINANCNYPLAN": ("financnyPlan", [
+        ("SUMA", "suma", "DOUBLE"),
+        ("ZDROJ_ID", "zdroj.id", "BIGINT"),
+    ]),
+    "PROJEKT_FORMAPODPORY": ("formaPodpory", [
+        ("FORMAPODPORY_ID", "formaPodpory.id", "BIGINT"),
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+    ]),
+    "PROJEKT_HOSPODARSKACINNOST": ("hospodarskaCinnost", [
+        ("HOSPODARSKACINNOST_ID", "hospodarskaCinnost.id", "BIGINT"),
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+    ]),
+    "PROJEKT_INEUDAJE": ("ineUdaje", [
+        ("INEUDAJESC_INEUDAJE_KOD", "ineUdajeSC.ineUdaje.kod", "VARCHAR"),
+        ("INEUDAJESC_INEUDAJE_MERNAJEDNOTKA_ID", "ineUdajeSC.ineUdaje.mernaJednotka.id", "BIGINT"),
+        ("INEUDAJESC_INEUDAJE_NAZOVDE", "ineUdajeSC.ineUdaje.nazovDe", "VARCHAR"),
+        ("INEUDAJESC_INEUDAJE_NAZOVEN", "ineUdajeSC.ineUdaje.nazovEn", "VARCHAR"),
+        ("INEUDAJESC_INEUDAJE_NAZOVSK", "ineUdajeSC.ineUdaje.nazovSk", "VARCHAR"),
+        ("INEUDAJESC_KATEGORIAREGIONOV_ID", "ineUdajeSC.kategoriaRegionov.id", "BIGINT"),
+        ("INEUDAJESC_SPECIFICKYCIELPROGRAMU_ID", "ineUdajeSC.specifickyCielProgramu.id", "BIGINT"),
+        ("SUBJEKTNAPROJEKT_PLATNOSTDO", "subjektNaProjekt.platnostDo", "BIGINT"),
+        ("SUBJEKTNAPROJEKT_PLATNOSTOD", "subjektNaProjekt.platnostOd", "BIGINT"),
+        ("SUBJEKTNAPROJEKT_ROLA", "subjektNaProjekt.rola", "VARCHAR"),
+        ("SUBJEKTNAPROJEKT_SUBJEKT_ID", "subjektNaProjekt.subjekt.id", "BIGINT"),
+    ]),
+    "PROJEKT_INTENZITY": ("intenzity", [("ID", "id", "BIGINT")]),
+    "PROJEKT_KATEGORIAREGIONOV": ("kategoriaRegionov", [("ID", "id", "BIGINT")]),
+    "PROJEKT_MAKROREGIONALNASTRATEGIAASTRATEGIAPREMORSKEOBLASTI": (
+        "makroregionalnaStrategiaAStrategiaPreMorskeOblasti", [
+            ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+            ("MAKROREGIONALNASTRATEGIAASTRATEGIAPREMORSKEOBLASTI_ID",
+             "makroregionalnaStrategiaAStrategiaPreMorskeOblasti.id", "BIGINT"),
+            ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ]),
+    "PROJEKT_MIESTOREALIZACIE": ("miestoRealizacie", [("ID", "id", "BIGINT")]),
+    "PROJEKT_MIESTOREALIZACIEFULL": ("miestoRealizacieFull", [
+        ("LOKALITA", "lokalita", "VARCHAR"),
+        ("NUTS2_ID", "nuts2.id", "BIGINT"),
+        ("NUTS3_ID", "nuts3.id", "BIGINT"),
+        ("NUTS4_ID", "nuts4.id", "BIGINT"),
+        ("NUTS5_ID", "nuts5.id", "BIGINT"),
+        ("OBECMIMOEU", "obecMimoEu", "VARCHAR"),
+        ("OKRESMIMOEU", "okresMimoEU", "VARCHAR"),
+        ("SAMOSPRAVNYKRAJMIMOEU", "samospravnyKrajMimoEU", "VARCHAR"),
+        ("STAT_ID", "stat.id", "BIGINT"),
+    ]),
+    "PROJEKT_MONITOROVACIETERMINY": ("monitorovacieTerminy", [
+        ("ID", "id", "BIGINT"),
+        ("DATUMPREDLOZENIANAJNESKORSI", "datumPredlozeniaNajneskorsi", "BIGINT"),
+        ("PORADOVECISLO", "poradoveCislo", "INTEGER"),
+        ("TERMINMONITOROVANIA", "terminMonitorovania", "BIGINT"),
+        ("TYPMONITOROVANIA", "typMonitorovania", "VARCHAR"),
+    ]),
+    "PROJEKT_OBLASTINTERVENCIE": ("oblastIntervencie", [
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("OBLASTINTERVENCIE_ID", "oblastIntervencie.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+    ]),
+    "PROJEKT_OPATRENIE": ("opatrenie", [("ID", "id", "BIGINT")]),
+    "PROJEKT_ORGANIZACNEZLOZKY": ("organizacneZlozky", [
+        ("ID", "id", "BIGINT"),
+        ("NAZOV", "nazov", "VARCHAR"),
+        ("ADRESA_ULICA", "adresa.ulica", "VARCHAR"),
+        ("ADRESA_CISLO", "adresa.cislo", "VARCHAR"),
+        ("ADRESA_PSC", "adresa.psc", "VARCHAR"),
+        ("ADRESA_OBEC", "adresa.obec", "VARCHAR"),
+        ("ADRESA_STAT_ID", "adresa.stat.id", "BIGINT"),
+    ]),
+    "PROJEKT_PARTNER": ("partner", [("ID", "id", "BIGINT")]),
+    "PROJEKT_POLOZKYROZPOCTU": ("polozkyRozpoctu", [("ID", "id", "BIGINT")]),
+    "PROJEKT_PREDCHODCA": ("predchodca", [
+        ("PLATNOSTNASLEDNIKAOD", "platnostNaslednikaOd", "BIGINT"),
+        ("PLATNOSTPREDCHODCUDO", "platnostPredchodcuDo", "BIGINT"),
+        ("NASLEDNIK_ROLA", "naslednik.rola", "VARCHAR"),
+        ("NASLEDNIK_PLATNOSTOD", "naslednik.platnostOd", "BIGINT"),
+        ("NASLEDNIK_PLATNOSTDO", "naslednik.platnostDo", "BIGINT"),
+        ("NASLEDNIK_SUBJEKT_ID", "naslednik.subjekt.id", "BIGINT"),
+        ("PREDCHODCA_ROLA", "predchodca.rola", "VARCHAR"),
+        ("PREDCHODCA_PLATNOSTOD", "predchodca.platnostOd", "BIGINT"),
+        ("PREDCHODCA_PLATNOSTDO", "predchodca.platnostDo", "BIGINT"),
+        ("PREDCHODCA_SUBJEKT_ID", "predchodca.subjekt.id", "BIGINT"),
+    ]),
+    "PROJEKT_PROJEKTOVYZAMERIUS": ("projektovyZamerIUS", [("ID", "id", "BIGINT")]),
+    "PROJEKT_RODOVAROVNOST": ("rodovaRovnost", [
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("RODOVAROVNOST_ID", "rodovaRovnost.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+    ]),
+    "PROJEKT_SEKUNDARNYTEMATICKYOKRUH": ("sekundarnyTematickyOkruh", [
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("SEKUNDARNYTEMATICKYOKRUH_ID", "sekundarnyTematickyOkruh.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+    ]),
+    "PROJEKT_SPECIFICKYCIELPROGRAMU": ("specifickyCielProgramu", [("ID", "id", "BIGINT")]),
+    "PROJEKT_TYPAKCIE": ("typAkcie", [
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("TYPAKCIE_ID", "typAkcie.id", "BIGINT"),
+    ]),
+    "PROJEKT_TYPINTERVENCIE": ("typIntervencie", [
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("TYPINTERVENCIE_ID", "typIntervencie.id", "BIGINT"),
+    ]),
+    "PROJEKT_UKAZOVATELVYSLEDKU": ("ukazovatelVysledku", [
+        ("CIELOVAHODNOTASPOLU", "cielovaHodnotaSpolu", "DOUBLE"),
+        ("VYCHODISKOVAHODNOTASPOLU", "vychodiskovaHodnotaSpolu", "DOUBLE"),
+        ("UKAZOVATELPROJEKTOVYSC_ID", "ukazovatelProjektovySC.id", "BIGINT"),
+        ("UKAZOVATELPROJEKTOVYSC_KATEGORIAREGIONOV_ID", "ukazovatelProjektovySC.kategoriaRegionov.id", "BIGINT"),
+        ("UKAZOVATELPROJEKTOVYSC_SPECIFICKYCIELPROGRAMU_ID",
+         "ukazovatelProjektovySC.specifickyCielProgramu.id", "BIGINT"),
+        ("UKAZOVATELPROJEKTOVYSC_UKAZOVATELPROJEKTOVY_ID",
+         "ukazovatelProjektovySC.ukazovatelProjektovy.id", "BIGINT"),
+    ]),
+    "PROJEKT_UKAZOVATELVYSTUPU": ("ukazovatelVystupu", [
+        ("CIELOVAHODNOTASPOLU", "cielovaHodnotaSpolu", "DOUBLE"),
+        ("VYCHODISKOVAHODNOTASPOLU", "vychodiskovaHodnotaSpolu", "DOUBLE"),
+        ("UKAZOVATELPROJEKTOVYSC_ID", "ukazovatelProjektovySC.id", "BIGINT"),
+        ("UKAZOVATELPROJEKTOVYSC_KATEGORIAREGIONOV_ID", "ukazovatelProjektovySC.kategoriaRegionov.id", "BIGINT"),
+        ("UKAZOVATELPROJEKTOVYSC_SPECIFICKYCIELPROGRAMU_ID",
+         "ukazovatelProjektovySC.specifickyCielProgramu.id", "BIGINT"),
+        ("UKAZOVATELPROJEKTOVYSC_UKAZOVATELPROJEKTOVY_ID",
+         "ukazovatelProjektovySC.ukazovatelProjektovy.id", "BIGINT"),
+    ]),
+    "PROJEKT_URCITATEMA": ("urcitaTema", [
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("URCITATEMA_ID", "urcitaTema.id", "BIGINT"),
+    ]),
+    "PROJEKT_UZEMNYMECHANIZMUSAZAMERANIE": ("uzemnyMechanizmusAZameranie", [
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("UZEMNYMECHANIZMUSAZAMERANIE_ID", "uzemnyMechanizmusAZameranie.id", "BIGINT"),
+    ]),
+    "PROJEKT_VYKONAVANIE": ("vykonavanie", [
+        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
+        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("VYKONAVANIE_ID", "vykonavanie.id", "BIGINT"),
+    ]),
+    "PROJEKT_ZMENAPROJEKT": ("zmenaProjekt", [
+        ("ID", "id", "BIGINT"),
+        ("CISLODODATKU", "cisloDodatku", "VARCHAR"),
+        ("PREDMET", "predmet", "VARCHAR"),
+        ("DATUMPLATNOSTI", "datumPlatnosti", "BIGINT"),
+        ("DATUMUCINNOSTI", "datumUcinnosti", "BIGINT"),
+        ("URL", "url", "VARCHAR"),
+    ]),
+}
+
+
+def ensure_full_schema(con: duckdb.DuckDBPyConnection) -> None:
+    """Create PROJEKT and every PROJEKT_* child/grandchild table if missing."""
+    cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in PROJEKT_COLUMNS)
+    con.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_PROJEKT} (
+            {cols_sql},
+            PRIMARY KEY (ID)
+        )
+    """)
+
+    for table, (_, columns) in CHILD_TABLES.items():
+        cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in columns)
+        con.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table} (
+                PROJECT_ID BIGINT,
+                {cols_sql}
+            )
+        """)
+
+    # Two grandchild tables: a "dokument" list living one level deeper than a
+    # child-table row (PROJEKT_ZMENAPROJEKT) or the flattened PROJEKT row
+    # (zmluvaProjekt). Both carry PROJECT_ID so they join back to PROJEKT.
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS PROJEKT_ZMENAPROJEKT_DOKUMENT (
+            PROJECT_ID BIGINT,
+            ZMENAPROJEKT_ID BIGINT,
+            NAZOV VARCHAR,
+            UUID VARCHAR
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS PROJEKT_ZMLUVAPROJEKT_DOKUMENT (
+            PROJECT_ID BIGINT,
+            NAZOV VARCHAR,
+            UUID VARCHAR
+        )
+    """)
+
+
+def store_full_detail(con: duckdb.DuckDBPyConnection, detail: dict) -> None:
+    """Decompose one project's full detail JSON into PROJEKT + all child/grandchild
+    tables. Only ever called once per project id (gated by get_known_ids in
+    sync_projects), so this is a plain INSERT — never re-fetched, never updated."""
+    project_id = detail.get("id")
+
+    columns_sql = ", ".join(col for col, _, _ in PROJEKT_COLUMNS)
+    placeholders = ", ".join("?" for _ in PROJEKT_COLUMNS)
+    values = [_get(detail, path) for _, path, _ in PROJEKT_COLUMNS]
+    con.execute(
+        f"INSERT INTO {TABLE_PROJEKT} ({columns_sql}) VALUES ({placeholders}) "
+        f"ON CONFLICT (ID) DO NOTHING",
+        values,
+    )
+
+    for table, (source_field, columns) in CHILD_TABLES.items():
+        items = detail.get(source_field) or []
+        if not items:
+            continue
+        columns_sql = ", ".join(col for col, _, _ in columns)
+        placeholders = ", ".join("?" for _ in columns)
+        rows = [
+            [project_id] + [_get(item, path) for _, path, _ in columns]
+            for item in items
+        ]
+        con.executemany(
+            f"INSERT INTO {table} (PROJECT_ID, {columns_sql}) VALUES (?, {placeholders})",
+            rows,
+        )
+
+    zmena_doc_rows = []
+    for item in detail.get("zmenaProjekt") or []:
+        zmena_id = item.get("id")
+        for doc in item.get("dokument") or []:
+            zmena_doc_rows.append([project_id, zmena_id, doc.get("nazov"), doc.get("uuid")])
+    if zmena_doc_rows:
+        con.executemany(
+            "INSERT INTO PROJEKT_ZMENAPROJEKT_DOKUMENT (PROJECT_ID, ZMENAPROJEKT_ID, NAZOV, UUID) "
+            "VALUES (?, ?, ?, ?)",
+            zmena_doc_rows,
+        )
+
+    zmluva_docs = (detail.get("zmluvaProjekt") or {}).get("dokument") or []
+    if zmluva_docs:
+        con.executemany(
+            "INSERT INTO PROJEKT_ZMLUVAPROJEKT_DOKUMENT (PROJECT_ID, NAZOV, UUID) VALUES (?, ?, ?)",
+            [[project_id, doc.get("nazov"), doc.get("uuid")] for doc in zmluva_docs],
+        )
+
+
 def get_known_ids(con: duckdb.DuckDBPyConnection) -> set[int]:
-    """Set of project_id values already stored, so we never re-fetch them."""
-    rows = con.execute(f"SELECT project_id FROM {TABLE_CURRENT}").fetchall()
+    """Ids already fully stored (both the simple summary and the full detail
+    schema are written together), so we never re-fetch them."""
+    rows = con.execute(f"SELECT ID FROM {TABLE_PROJEKT}").fetchall()
     return {row[0] for row in rows}
 
 
@@ -181,6 +527,7 @@ def sync_projects() -> tuple[int, int, int]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
     ensure_table(con)
+    ensure_full_schema(con)
 
     print("Fetching project list...")
     list_items = fetch_list()
@@ -206,6 +553,7 @@ def sync_projects() -> tuple[int, int, int]:
                     continue
                 row = flatten_project(detail)
                 upsert_row(con, row)
+                store_full_detail(con, detail)
                 fetched_count += 1
 
                 if i % 50 == 0 or i == len(to_fetch):
