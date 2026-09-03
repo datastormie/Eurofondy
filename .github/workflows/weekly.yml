@@ -24,15 +24,33 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore DuckDB store from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data
+          gh release download data-store --repo "$GITHUB_REPOSITORY" --pattern eurofondy.duckdb --dir data --clobber \
+            || echo "No existing release asset yet; starting with a fresh DuckDB file."
+
       - name: Run fetch scripts
         run: |
           python scripts/fetch_programs.py
           python scripts/fetch_projects.py
 
+      - name: Save DuckDB store to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view data-store --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create data-store --repo "$GITHUB_REPOSITORY" \
+                 --title "Data store (not a versioned release)" \
+                 --notes "Holds eurofondy.duckdb so the incremental fetch scripts can persist state between weekly runs. Not a code release — do not delete unless you want to force a full re-fetch."
+          gh release upload data-store data/eurofondy.duckdb --repo "$GITHUB_REPOSITORY" --clobber
+
       - name: Commit and push updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/program_data.json docs/project_data.json data/eurofondy.duckdb
+          git add docs/program_data.json docs/project_data.json
           git diff --staged --quiet || git commit -m "Update program/project data $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
