@@ -23,7 +23,7 @@ import requests
 LIST_URL = "https://api.itms21.sk/public/v1/projekt?limit=-1"
 DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/projekt/id/{id}"
 
-DB_PATH = Path("data/programs.duckdb")  # shared DuckDB file, separate table inside
+DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
 JSON_OUT_PATH = Path("docs/project_data.json")
 
 TABLE_CURRENT = "projects_current"
