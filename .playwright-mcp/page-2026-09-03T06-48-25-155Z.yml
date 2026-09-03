@@ -1,0 +1,18 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - link "EU Funds Slovakia" [ref=f1e3] [cursor=pointer]:
+      - /url: index.html
+    - navigation [ref=f1e13]:
+      - link "Programs" [ref=f1e14] [cursor=pointer]:
+        - /url: index.html
+      - link "Projects" [ref=f1e15] [cursor=pointer]:
+        - /url: projects.html
+      - link "Top 50 Projects" [ref=f1e16] [cursor=pointer]:
+        - /url: top_projects_chart.html
+      - link "Top 25 Recipients" [ref=f1e17] [cursor=pointer]:
+        - /url: top_recipients_chart.html
+  - generic [ref=f1e18]:
+    - heading "Top 25 Recipients" [level=1] [ref=f1e19]
+    - paragraph [ref=f1e21]: EU vs. national (SR) contribution, summed across all their projects
+    - paragraph [ref=f1e22]: "Last updated: Sep 2, 2026, 7:20 PM"
+    - paragraph [ref=f1e23]: "Tip: click a bar to see that recipient's projects."
