@@ -44,6 +44,7 @@ jobs:
           python scripts/fetch_opatrenie.py
           python scripts/fetch_typakcieprogramu.py
           python scripts/fetch_zonfp.py
+          python scripts/fetch_zop.py
 
       - name: Save DuckDB store to release
         env:
