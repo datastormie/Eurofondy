@@ -23,7 +23,8 @@ API_URL = "https://api.itms21.sk/public/v1/program?limit=-1"
 DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
 JSON_OUT_PATH = Path("docs/program_data.json")
 
-TABLE_CURRENT = "programs_current"
+TABLE_PREFIX = "itms21_"
+TABLE_CURRENT = f"{TABLE_PREFIX}programs_current"
 
 
 def fetch_programs() -> list[dict]:
@@ -66,6 +67,9 @@ def flatten_program(d: dict) -> dict:
 
 
 def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
+    # One-time rename from the pre-"itms21_"-prefix table name; a no-op once
+    # the rename has happened (ALTER TABLE IF EXISTS is idempotent).
+    con.execute(f"ALTER TABLE IF EXISTS programs_current RENAME TO {TABLE_CURRENT}")
     con.execute(f"""
         CREATE TABLE IF NOT EXISTS {TABLE_CURRENT} (
             program_id       INTEGER PRIMARY KEY,

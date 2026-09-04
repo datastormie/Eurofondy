@@ -37,7 +37,8 @@ DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/projekt/id/{id}"
 DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
 JSON_OUT_PATH = Path("docs/project_data.json")
 
-TABLE_CURRENT = "projects_current"
+TABLE_PREFIX = "itms21_"
+TABLE_CURRENT = f"{TABLE_PREFIX}projects_current"
 
 MAX_WORKERS = 8           # concurrent detail requests — keep modest to avoid hammering the API
 REQUEST_TIMEOUT = 30
@@ -123,6 +124,9 @@ def flatten_project(d: dict) -> dict:
 
 
 def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
+    # One-time rename from the pre-"itms21_"-prefix table name; a no-op once
+    # the rename has happened (ALTER TABLE IF EXISTS is idempotent).
+    con.execute(f"ALTER TABLE IF EXISTS projects_current RENAME TO {TABLE_CURRENT}")
     con.execute(f"""
         CREATE TABLE IF NOT EXISTS {TABLE_CURRENT} (
             project_id                  INTEGER PRIMARY KEY,
@@ -158,266 +162,322 @@ def _get(d: dict | None, path: str):
     return cur
 
 
+def _t(bare_name: str) -> str:
+    """Prefix a bare child-table name (as used as a CHILD_TABLES key) with TABLE_PREFIX."""
+    return f"{TABLE_PREFIX}{bare_name}".lower()
+
+
+def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
+    return con.execute(
+        "SELECT 1 FROM information_schema.tables WHERE lower(table_name) = lower(?)", [name]
+    ).fetchone() is not None
+
+
+def _rename_columns(con: duckdb.DuckDBPyConnection, table: str, columns: list[str]) -> None:
+    """Rename every column in `columns` from its old ALL-CAPS form to its
+    current lowercase form; matching is case-insensitive, so this is a no-op
+    once a column is already lowercase (safe to run on every invocation)."""
+    for col in columns:
+        con.execute(f"ALTER TABLE {table} RENAME COLUMN {col.upper()} TO {col}")
+
+
 # --- Full normalized schema -------------------------------------------------
 # Mirrors the ITMS21 "projekt" detail endpoint field-by-field (see module
 # docstring). column_name -> (dotted path in the raw detail JSON, DuckDB type).
 
-TABLE_PROJEKT = "PROJEKT"
+TABLE_PROJEKT = f"{TABLE_PREFIX}PROJEKT".lower()
 
 PROJEKT_COLUMNS: list[tuple[str, str, str]] = [
-    ("ID", "id", "BIGINT"),
-    ("HREF", "href", "VARCHAR"),
-    ("KOD", "kod", "VARCHAR"),
-    ("NAZOV", "nazov", "VARCHAR"),
-    ("AKRONYM", "akronym", "VARCHAR"),
-    ("STAV", "stav", "VARCHAR"),
-    ("MRK", "mrk", "VARCHAR"),
-    ("ZAMERANIEPROJEKTU", "zameranieProjektu", "VARCHAR"),
-    ("UCEL", "ucel", "VARCHAR"),
-    ("POPIS", "popis", "VARCHAR"),
-    ("POPISKAPACITYPRIJIMATELA", "popisKapacityPrijimatela", "VARCHAR"),
-    ("POPISSITUACIEPOREALIZACII", "popisSituaciePoRealizacii", "VARCHAR"),
-    ("POPISSPOSOBUREALIZACIE", "popisSposobuRealizacie", "VARCHAR"),
-    ("POPISVYCHODISKOVEJSITUACIE", "popisVychodiskovejSituacie", "VARCHAR"),
-    ("CELKOVAZAZMLUVNENASUMA", "celkovaZazmluvnenaSuma", "DOUBLE"),
-    ("CELKOVAZAZMLUVNENASUMAPOVODNA", "celkovaZazmluvnenaSumaPovodna", "DOUBLE"),
-    ("ZAZMLUVNENASUMANFP", "zazmluvnenaSumaNfp", "DOUBLE"),
-    ("POSKYTNUTEPROSTRIEDKY", "poskytnuteProstriedky", "DOUBLE"),
-    ("DATUMZACIATKUHLAVNYCHAKTIVIT", "datumZaciatkuHlavnychAktivit", "BIGINT"),
-    ("DATUMKONCAHLAVNYCHAKTIVIT", "datumKoncaHlavnychAktivit", "BIGINT"),
-    ("DLZKACELKOVAHLAVNYCHAKTIVIT", "dlzkaCelkovaHlavnychAktivit", "INTEGER"),
-    ("DLZKACELKOVAPROJEKTU", "dlzkaCelkovaProjektu", "INTEGER"),
-    ("PLANOVANAREALIZACIAZACIATOK", "planovanaRealizaciaZaciatok", "BIGINT"),
-    ("PLANOVANAREALIZACIAKONIEC", "planovanaRealizaciaKoniec", "BIGINT"),
-    ("SKUTOCNAREALIZACIAZACIATOK", "skutocnaRealizaciaZaciatok", "BIGINT"),
-    ("SKUTOCNAREALIZACIAKONIEC", "skutocnaRealizaciaKoniec", "BIGINT"),
-    ("JEOTVORENAZMENA", "jeOtvorenaZmena", "BOOLEAN"),
-    ("MAKATEGORIUREGIONOV", "maKategoriuRegionov", "BOOLEAN"),
-    ("MIMORIADNEUKONCENYNEPRISPEL", "mimoriadneUkoncenyNeprispel", "BOOLEAN"),
-    ("MIMORIADNEUKONCENYPRISPEL", "mimoriadneUkoncenyPrispel", "BOOLEAN"),
-    ("OBSAHUJEMIESTOREALIZACIEZAHRANICIE", "obsahujeMiestoRealizacieZahranicie", "BOOLEAN"),
-    ("REALIZACIAAKTIVITPOZASTAVENA", "realizaciaAktivitPozastavena", "BOOLEAN"),
-    ("UDRZATELNYROZVOJMIEST", "udrzatelnyRozvojMiest", "BOOLEAN"),
-    ("UKONCENY", "ukonceny", "BOOLEAN"),
-    ("VREALIZACII", "vrealizacii", "BOOLEAN"),
-    ("VYLUCENYZFINANCOVANIA", "vylucenyZFinancovania", "BOOLEAN"),
-    ("PRIJIMATEL_ID", "prijimatel.id", "BIGINT"),
-    ("PROGRAM_ID", "program.id", "BIGINT"),
-    ("VYZVA_ID", "vyzva.id", "BIGINT"),
-    ("ZONFP_ID", "zonfp.id", "BIGINT"),
-    ("POSKYTOVATELORGAN_ID", "poskytovatelOrgan.id", "BIGINT"),
-    ("POSKYTOVATELORGAN_KOD", "poskytovatelOrgan.kod", "VARCHAR"),
-    ("POSKYTOVATELORGAN_NAZOV", "poskytovatelOrgan.nazov", "VARCHAR"),
-    ("POSKYTOVATELSUBJEKT_ID", "poskytovatelSubjekt.id", "BIGINT"),
-    ("VYHLASOVATELORGAN_ID", "vyhlasovatelOrgan.id", "BIGINT"),
-    ("VYHLASOVATELORGAN_KOD", "vyhlasovatelOrgan.kod", "VARCHAR"),
-    ("VYHLASOVATELORGAN_NAZOV", "vyhlasovatelOrgan.nazov", "VARCHAR"),
-    ("ZMLUVAPROJEKT_ID", "zmluvaProjekt.id", "BIGINT"),
-    ("ZMLUVAPROJEKT_CISLO", "zmluvaProjekt.cislo", "VARCHAR"),
-    ("ZMLUVAPROJEKT_DATUMPLATNOSTI", "zmluvaProjekt.datumPlatnosti", "BIGINT"),
-    ("ZMLUVAPROJEKT_DATUMUCINNOSTI", "zmluvaProjekt.datumUcinnosti", "BIGINT"),
-    ("ZMLUVAPROJEKT_URL", "zmluvaProjekt.url", "VARCHAR"),
-    ("CREATEDAT", "createdAt", "BIGINT"),
-    ("UPDATEDAT", "updatedAt", "BIGINT"),
+    ("id", "id", "BIGINT"),
+    ("href", "href", "VARCHAR"),
+    ("kod", "kod", "VARCHAR"),
+    ("nazov", "nazov", "VARCHAR"),
+    ("akronym", "akronym", "VARCHAR"),
+    ("stav", "stav", "VARCHAR"),
+    ("mrk", "mrk", "VARCHAR"),
+    ("zameranieprojektu", "zameranieProjektu", "VARCHAR"),
+    ("ucel", "ucel", "VARCHAR"),
+    ("popis", "popis", "VARCHAR"),
+    ("popiskapacityprijimatela", "popisKapacityPrijimatela", "VARCHAR"),
+    ("popissituacieporealizacii", "popisSituaciePoRealizacii", "VARCHAR"),
+    ("popissposoburealizacie", "popisSposobuRealizacie", "VARCHAR"),
+    ("popisvychodiskovejsituacie", "popisVychodiskovejSituacie", "VARCHAR"),
+    ("celkovazazmluvnenasuma", "celkovaZazmluvnenaSuma", "DOUBLE"),
+    ("celkovazazmluvnenasumapovodna", "celkovaZazmluvnenaSumaPovodna", "DOUBLE"),
+    ("zazmluvnenasumanfp", "zazmluvnenaSumaNfp", "DOUBLE"),
+    ("poskytnuteprostriedky", "poskytnuteProstriedky", "DOUBLE"),
+    ("datumzaciatkuhlavnychaktivit", "datumZaciatkuHlavnychAktivit", "BIGINT"),
+    ("datumkoncahlavnychaktivit", "datumKoncaHlavnychAktivit", "BIGINT"),
+    ("dlzkacelkovahlavnychaktivit", "dlzkaCelkovaHlavnychAktivit", "INTEGER"),
+    ("dlzkacelkovaprojektu", "dlzkaCelkovaProjektu", "INTEGER"),
+    ("planovanarealizaciazaciatok", "planovanaRealizaciaZaciatok", "BIGINT"),
+    ("planovanarealizaciakoniec", "planovanaRealizaciaKoniec", "BIGINT"),
+    ("skutocnarealizaciazaciatok", "skutocnaRealizaciaZaciatok", "BIGINT"),
+    ("skutocnarealizaciakoniec", "skutocnaRealizaciaKoniec", "BIGINT"),
+    ("jeotvorenazmena", "jeOtvorenaZmena", "BOOLEAN"),
+    ("makategoriuregionov", "maKategoriuRegionov", "BOOLEAN"),
+    ("mimoriadneukoncenyneprispel", "mimoriadneUkoncenyNeprispel", "BOOLEAN"),
+    ("mimoriadneukoncenyprispel", "mimoriadneUkoncenyPrispel", "BOOLEAN"),
+    ("obsahujemiestorealizaciezahranicie", "obsahujeMiestoRealizacieZahranicie", "BOOLEAN"),
+    ("realizaciaaktivitpozastavena", "realizaciaAktivitPozastavena", "BOOLEAN"),
+    ("udrzatelnyrozvojmiest", "udrzatelnyRozvojMiest", "BOOLEAN"),
+    ("ukonceny", "ukonceny", "BOOLEAN"),
+    ("vrealizacii", "vrealizacii", "BOOLEAN"),
+    ("vylucenyzfinancovania", "vylucenyZFinancovania", "BOOLEAN"),
+    ("prijimatel_id", "prijimatel.id", "BIGINT"),
+    ("program_id", "program.id", "BIGINT"),
+    ("vyzva_id", "vyzva.id", "BIGINT"),
+    ("zonfp_id", "zonfp.id", "BIGINT"),
+    ("poskytovatelorgan_id", "poskytovatelOrgan.id", "BIGINT"),
+    ("poskytovatelorgan_kod", "poskytovatelOrgan.kod", "VARCHAR"),
+    ("poskytovatelorgan_nazov", "poskytovatelOrgan.nazov", "VARCHAR"),
+    ("poskytovatelsubjekt_id", "poskytovatelSubjekt.id", "BIGINT"),
+    ("vyhlasovatelorgan_id", "vyhlasovatelOrgan.id", "BIGINT"),
+    ("vyhlasovatelorgan_kod", "vyhlasovatelOrgan.kod", "VARCHAR"),
+    ("vyhlasovatelorgan_nazov", "vyhlasovatelOrgan.nazov", "VARCHAR"),
+    ("zmluvaprojekt_id", "zmluvaProjekt.id", "BIGINT"),
+    ("zmluvaprojekt_cislo", "zmluvaProjekt.cislo", "VARCHAR"),
+    ("zmluvaprojekt_datumplatnosti", "zmluvaProjekt.datumPlatnosti", "BIGINT"),
+    ("zmluvaprojekt_datumucinnosti", "zmluvaProjekt.datumUcinnosti", "BIGINT"),
+    ("zmluvaprojekt_url", "zmluvaProjekt.url", "VARCHAR"),
+    ("createdat", "createdAt", "BIGINT"),
+    ("updatedat", "updatedAt", "BIGINT"),
 ]
 
 # table_name -> (source list field in the detail JSON, [(column, path-within-item, type), ...])
 CHILD_TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
-    "PROJEKT_AKTIVITY": ("aktivity", [("ID", "id", "BIGINT")]),
-    "PROJEKT_CIELOVASKUPINA": ("cielovaSkupina", [("ID", "id", "BIGINT")]),
+    "PROJEKT_AKTIVITY": ("aktivity", [("id", "id", "BIGINT")]),
+    "PROJEKT_CIELOVASKUPINA": ("cielovaSkupina", [("id", "id", "BIGINT")]),
     "PROJEKT_DODAVATEL": ("dodavatel", [
-        ("DIC", "dic", "VARCHAR"),
-        ("ICO", "ico", "VARCHAR"),
-        ("INEIDENTIFIKACNECISLO", "ineIdentifikacneCislo", "VARCHAR"),
-        ("NAZOV", "nazov", "VARCHAR"),
+        ("dic", "dic", "VARCHAR"),
+        ("ico", "ico", "VARCHAR"),
+        ("ineidentifikacnecislo", "ineIdentifikacneCislo", "VARCHAR"),
+        ("nazov", "nazov", "VARCHAR"),
     ]),
     "PROJEKT_FINANCNYPLAN": ("financnyPlan", [
-        ("SUMA", "suma", "DOUBLE"),
-        ("ZDROJ_ID", "zdroj.id", "BIGINT"),
+        ("suma", "suma", "DOUBLE"),
+        ("zdroj_id", "zdroj.id", "BIGINT"),
     ]),
     "PROJEKT_FORMAPODPORY": ("formaPodpory", [
-        ("FORMAPODPORY_ID", "formaPodpory.id", "BIGINT"),
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("formapodpory_id", "formaPodpory.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
     ]),
     "PROJEKT_HOSPODARSKACINNOST": ("hospodarskaCinnost", [
-        ("HOSPODARSKACINNOST_ID", "hospodarskaCinnost.id", "BIGINT"),
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("hospodarskacinnost_id", "hospodarskaCinnost.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
     ]),
     "PROJEKT_INEUDAJE": ("ineUdaje", [
-        ("INEUDAJESC_INEUDAJE_KOD", "ineUdajeSC.ineUdaje.kod", "VARCHAR"),
-        ("INEUDAJESC_INEUDAJE_MERNAJEDNOTKA_ID", "ineUdajeSC.ineUdaje.mernaJednotka.id", "BIGINT"),
-        ("INEUDAJESC_INEUDAJE_NAZOVDE", "ineUdajeSC.ineUdaje.nazovDe", "VARCHAR"),
-        ("INEUDAJESC_INEUDAJE_NAZOVEN", "ineUdajeSC.ineUdaje.nazovEn", "VARCHAR"),
-        ("INEUDAJESC_INEUDAJE_NAZOVSK", "ineUdajeSC.ineUdaje.nazovSk", "VARCHAR"),
-        ("INEUDAJESC_KATEGORIAREGIONOV_ID", "ineUdajeSC.kategoriaRegionov.id", "BIGINT"),
-        ("INEUDAJESC_SPECIFICKYCIELPROGRAMU_ID", "ineUdajeSC.specifickyCielProgramu.id", "BIGINT"),
-        ("SUBJEKTNAPROJEKT_PLATNOSTDO", "subjektNaProjekt.platnostDo", "BIGINT"),
-        ("SUBJEKTNAPROJEKT_PLATNOSTOD", "subjektNaProjekt.platnostOd", "BIGINT"),
-        ("SUBJEKTNAPROJEKT_ROLA", "subjektNaProjekt.rola", "VARCHAR"),
-        ("SUBJEKTNAPROJEKT_SUBJEKT_ID", "subjektNaProjekt.subjekt.id", "BIGINT"),
+        ("ineudajesc_ineudaje_kod", "ineUdajeSC.ineUdaje.kod", "VARCHAR"),
+        ("ineudajesc_ineudaje_mernajednotka_id", "ineUdajeSC.ineUdaje.mernaJednotka.id", "BIGINT"),
+        ("ineudajesc_ineudaje_nazovde", "ineUdajeSC.ineUdaje.nazovDe", "VARCHAR"),
+        ("ineudajesc_ineudaje_nazoven", "ineUdajeSC.ineUdaje.nazovEn", "VARCHAR"),
+        ("ineudajesc_ineudaje_nazovsk", "ineUdajeSC.ineUdaje.nazovSk", "VARCHAR"),
+        ("ineudajesc_kategoriaregionov_id", "ineUdajeSC.kategoriaRegionov.id", "BIGINT"),
+        ("ineudajesc_specifickycielprogramu_id", "ineUdajeSC.specifickyCielProgramu.id", "BIGINT"),
+        ("subjektnaprojekt_platnostdo", "subjektNaProjekt.platnostDo", "BIGINT"),
+        ("subjektnaprojekt_platnostod", "subjektNaProjekt.platnostOd", "BIGINT"),
+        ("subjektnaprojekt_rola", "subjektNaProjekt.rola", "VARCHAR"),
+        ("subjektnaprojekt_subjekt_id", "subjektNaProjekt.subjekt.id", "BIGINT"),
     ]),
-    "PROJEKT_INTENZITY": ("intenzity", [("ID", "id", "BIGINT")]),
-    "PROJEKT_KATEGORIAREGIONOV": ("kategoriaRegionov", [("ID", "id", "BIGINT")]),
+    "PROJEKT_INTENZITY": ("intenzity", [("id", "id", "BIGINT")]),
+    "PROJEKT_KATEGORIAREGIONOV": ("kategoriaRegionov", [("id", "id", "BIGINT")]),
     "PROJEKT_MAKROREGIONALNASTRATEGIAASTRATEGIAPREMORSKEOBLASTI": (
         "makroregionalnaStrategiaAStrategiaPreMorskeOblasti", [
-            ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-            ("MAKROREGIONALNASTRATEGIAASTRATEGIAPREMORSKEOBLASTI_ID",
+            ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+            ("makroregionalnastrategiaastrategiapremorskeoblasti_id",
              "makroregionalnaStrategiaAStrategiaPreMorskeOblasti.id", "BIGINT"),
-            ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+            ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
         ]),
-    "PROJEKT_MIESTOREALIZACIE": ("miestoRealizacie", [("ID", "id", "BIGINT")]),
+    "PROJEKT_MIESTOREALIZACIE": ("miestoRealizacie", [("id", "id", "BIGINT")]),
     "PROJEKT_MIESTOREALIZACIEFULL": ("miestoRealizacieFull", [
-        ("LOKALITA", "lokalita", "VARCHAR"),
-        ("NUTS2_ID", "nuts2.id", "BIGINT"),
-        ("NUTS3_ID", "nuts3.id", "BIGINT"),
-        ("NUTS4_ID", "nuts4.id", "BIGINT"),
-        ("NUTS5_ID", "nuts5.id", "BIGINT"),
-        ("OBECMIMOEU", "obecMimoEu", "VARCHAR"),
-        ("OKRESMIMOEU", "okresMimoEU", "VARCHAR"),
-        ("SAMOSPRAVNYKRAJMIMOEU", "samospravnyKrajMimoEU", "VARCHAR"),
-        ("STAT_ID", "stat.id", "BIGINT"),
+        ("lokalita", "lokalita", "VARCHAR"),
+        ("nuts2_id", "nuts2.id", "BIGINT"),
+        ("nuts3_id", "nuts3.id", "BIGINT"),
+        ("nuts4_id", "nuts4.id", "BIGINT"),
+        ("nuts5_id", "nuts5.id", "BIGINT"),
+        ("obecmimoeu", "obecMimoEu", "VARCHAR"),
+        ("okresmimoeu", "okresMimoEU", "VARCHAR"),
+        ("samospravnykrajmimoeu", "samospravnyKrajMimoEU", "VARCHAR"),
+        ("stat_id", "stat.id", "BIGINT"),
     ]),
     "PROJEKT_MONITOROVACIETERMINY": ("monitorovacieTerminy", [
-        ("ID", "id", "BIGINT"),
-        ("DATUMPREDLOZENIANAJNESKORSI", "datumPredlozeniaNajneskorsi", "BIGINT"),
-        ("PORADOVECISLO", "poradoveCislo", "INTEGER"),
-        ("TERMINMONITOROVANIA", "terminMonitorovania", "BIGINT"),
-        ("TYPMONITOROVANIA", "typMonitorovania", "VARCHAR"),
+        ("id", "id", "BIGINT"),
+        ("datumpredlozenianajneskorsi", "datumPredlozeniaNajneskorsi", "BIGINT"),
+        ("poradovecislo", "poradoveCislo", "INTEGER"),
+        ("terminmonitorovania", "terminMonitorovania", "BIGINT"),
+        ("typmonitorovania", "typMonitorovania", "VARCHAR"),
     ]),
     "PROJEKT_OBLASTINTERVENCIE": ("oblastIntervencie", [
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("OBLASTINTERVENCIE_ID", "oblastIntervencie.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("oblastintervencie_id", "oblastIntervencie.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
     ]),
-    "PROJEKT_OPATRENIE": ("opatrenie", [("ID", "id", "BIGINT")]),
+    "PROJEKT_OPATRENIE": ("opatrenie", [("id", "id", "BIGINT")]),
     "PROJEKT_ORGANIZACNEZLOZKY": ("organizacneZlozky", [
-        ("ID", "id", "BIGINT"),
-        ("NAZOV", "nazov", "VARCHAR"),
-        ("ADRESA_ULICA", "adresa.ulica", "VARCHAR"),
-        ("ADRESA_CISLO", "adresa.cislo", "VARCHAR"),
-        ("ADRESA_PSC", "adresa.psc", "VARCHAR"),
-        ("ADRESA_OBEC", "adresa.obec", "VARCHAR"),
-        ("ADRESA_STAT_ID", "adresa.stat.id", "BIGINT"),
+        ("id", "id", "BIGINT"),
+        ("nazov", "nazov", "VARCHAR"),
+        ("adresa_ulica", "adresa.ulica", "VARCHAR"),
+        ("adresa_cislo", "adresa.cislo", "VARCHAR"),
+        ("adresa_psc", "adresa.psc", "VARCHAR"),
+        ("adresa_obec", "adresa.obec", "VARCHAR"),
+        ("adresa_stat_id", "adresa.stat.id", "BIGINT"),
     ]),
-    "PROJEKT_PARTNER": ("partner", [("ID", "id", "BIGINT")]),
-    "PROJEKT_POLOZKYROZPOCTU": ("polozkyRozpoctu", [("ID", "id", "BIGINT")]),
+    "PROJEKT_PARTNER": ("partner", [("id", "id", "BIGINT")]),
+    "PROJEKT_POLOZKYROZPOCTU": ("polozkyRozpoctu", [("id", "id", "BIGINT")]),
     "PROJEKT_PREDCHODCA": ("predchodca", [
-        ("PLATNOSTNASLEDNIKAOD", "platnostNaslednikaOd", "BIGINT"),
-        ("PLATNOSTPREDCHODCUDO", "platnostPredchodcuDo", "BIGINT"),
-        ("NASLEDNIK_ROLA", "naslednik.rola", "VARCHAR"),
-        ("NASLEDNIK_PLATNOSTOD", "naslednik.platnostOd", "BIGINT"),
-        ("NASLEDNIK_PLATNOSTDO", "naslednik.platnostDo", "BIGINT"),
-        ("NASLEDNIK_SUBJEKT_ID", "naslednik.subjekt.id", "BIGINT"),
-        ("PREDCHODCA_ROLA", "predchodca.rola", "VARCHAR"),
-        ("PREDCHODCA_PLATNOSTOD", "predchodca.platnostOd", "BIGINT"),
-        ("PREDCHODCA_PLATNOSTDO", "predchodca.platnostDo", "BIGINT"),
-        ("PREDCHODCA_SUBJEKT_ID", "predchodca.subjekt.id", "BIGINT"),
+        ("platnostnaslednikaod", "platnostNaslednikaOd", "BIGINT"),
+        ("platnostpredchodcudo", "platnostPredchodcuDo", "BIGINT"),
+        ("naslednik_rola", "naslednik.rola", "VARCHAR"),
+        ("naslednik_platnostod", "naslednik.platnostOd", "BIGINT"),
+        ("naslednik_platnostdo", "naslednik.platnostDo", "BIGINT"),
+        ("naslednik_subjekt_id", "naslednik.subjekt.id", "BIGINT"),
+        ("predchodca_rola", "predchodca.rola", "VARCHAR"),
+        ("predchodca_platnostod", "predchodca.platnostOd", "BIGINT"),
+        ("predchodca_platnostdo", "predchodca.platnostDo", "BIGINT"),
+        ("predchodca_subjekt_id", "predchodca.subjekt.id", "BIGINT"),
     ]),
-    "PROJEKT_PROJEKTOVYZAMERIUS": ("projektovyZamerIUS", [("ID", "id", "BIGINT")]),
+    "PROJEKT_PROJEKTOVYZAMERIUS": ("projektovyZamerIUS", [("id", "id", "BIGINT")]),
     "PROJEKT_RODOVAROVNOST": ("rodovaRovnost", [
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("RODOVAROVNOST_ID", "rodovaRovnost.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("rodovarovnost_id", "rodovaRovnost.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
     ]),
     "PROJEKT_SEKUNDARNYTEMATICKYOKRUH": ("sekundarnyTematickyOkruh", [
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("SEKUNDARNYTEMATICKYOKRUH_ID", "sekundarnyTematickyOkruh.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("sekundarnytematickyokruh_id", "sekundarnyTematickyOkruh.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
     ]),
-    "PROJEKT_SPECIFICKYCIELPROGRAMU": ("specifickyCielProgramu", [("ID", "id", "BIGINT")]),
+    "PROJEKT_SPECIFICKYCIELPROGRAMU": ("specifickyCielProgramu", [("id", "id", "BIGINT")]),
     "PROJEKT_TYPAKCIE": ("typAkcie", [
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
-        ("TYPAKCIE_ID", "typAkcie.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
+        ("typakcie_id", "typAkcie.id", "BIGINT"),
     ]),
     "PROJEKT_TYPINTERVENCIE": ("typIntervencie", [
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
-        ("TYPINTERVENCIE_ID", "typIntervencie.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
+        ("typintervencie_id", "typIntervencie.id", "BIGINT"),
     ]),
     "PROJEKT_UKAZOVATELVYSLEDKU": ("ukazovatelVysledku", [
-        ("CIELOVAHODNOTASPOLU", "cielovaHodnotaSpolu", "DOUBLE"),
-        ("VYCHODISKOVAHODNOTASPOLU", "vychodiskovaHodnotaSpolu", "DOUBLE"),
-        ("UKAZOVATELPROJEKTOVYSC_ID", "ukazovatelProjektovySC.id", "BIGINT"),
-        ("UKAZOVATELPROJEKTOVYSC_KATEGORIAREGIONOV_ID", "ukazovatelProjektovySC.kategoriaRegionov.id", "BIGINT"),
-        ("UKAZOVATELPROJEKTOVYSC_SPECIFICKYCIELPROGRAMU_ID",
+        ("cielovahodnotaspolu", "cielovaHodnotaSpolu", "DOUBLE"),
+        ("vychodiskovahodnotaspolu", "vychodiskovaHodnotaSpolu", "DOUBLE"),
+        ("ukazovatelprojektovysc_id", "ukazovatelProjektovySC.id", "BIGINT"),
+        ("ukazovatelprojektovysc_kategoriaregionov_id", "ukazovatelProjektovySC.kategoriaRegionov.id", "BIGINT"),
+        ("ukazovatelprojektovysc_specifickycielprogramu_id",
          "ukazovatelProjektovySC.specifickyCielProgramu.id", "BIGINT"),
-        ("UKAZOVATELPROJEKTOVYSC_UKAZOVATELPROJEKTOVY_ID",
+        ("ukazovatelprojektovysc_ukazovatelprojektovy_id",
          "ukazovatelProjektovySC.ukazovatelProjektovy.id", "BIGINT"),
     ]),
     "PROJEKT_UKAZOVATELVYSTUPU": ("ukazovatelVystupu", [
-        ("CIELOVAHODNOTASPOLU", "cielovaHodnotaSpolu", "DOUBLE"),
-        ("VYCHODISKOVAHODNOTASPOLU", "vychodiskovaHodnotaSpolu", "DOUBLE"),
-        ("UKAZOVATELPROJEKTOVYSC_ID", "ukazovatelProjektovySC.id", "BIGINT"),
-        ("UKAZOVATELPROJEKTOVYSC_KATEGORIAREGIONOV_ID", "ukazovatelProjektovySC.kategoriaRegionov.id", "BIGINT"),
-        ("UKAZOVATELPROJEKTOVYSC_SPECIFICKYCIELPROGRAMU_ID",
+        ("cielovahodnotaspolu", "cielovaHodnotaSpolu", "DOUBLE"),
+        ("vychodiskovahodnotaspolu", "vychodiskovaHodnotaSpolu", "DOUBLE"),
+        ("ukazovatelprojektovysc_id", "ukazovatelProjektovySC.id", "BIGINT"),
+        ("ukazovatelprojektovysc_kategoriaregionov_id", "ukazovatelProjektovySC.kategoriaRegionov.id", "BIGINT"),
+        ("ukazovatelprojektovysc_specifickycielprogramu_id",
          "ukazovatelProjektovySC.specifickyCielProgramu.id", "BIGINT"),
-        ("UKAZOVATELPROJEKTOVYSC_UKAZOVATELPROJEKTOVY_ID",
+        ("ukazovatelprojektovysc_ukazovatelprojektovy_id",
          "ukazovatelProjektovySC.ukazovatelProjektovy.id", "BIGINT"),
     ]),
     "PROJEKT_URCITATEMA": ("urcitaTema", [
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
-        ("URCITATEMA_ID", "urcitaTema.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
+        ("urcitatema_id", "urcitaTema.id", "BIGINT"),
     ]),
     "PROJEKT_UZEMNYMECHANIZMUSAZAMERANIE": ("uzemnyMechanizmusAZameranie", [
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
-        ("UZEMNYMECHANIZMUSAZAMERANIE_ID", "uzemnyMechanizmusAZameranie.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
+        ("uzemnymechanizmusazameranie_id", "uzemnyMechanizmusAZameranie.id", "BIGINT"),
     ]),
     "PROJEKT_VYKONAVANIE": ("vykonavanie", [
-        ("KATEGORIAREGIONOV_ID", "kategoriaRegionov.id", "BIGINT"),
-        ("SPECIFICKYCIELPROGRAMU_ID", "specifickyCielProgramu.id", "BIGINT"),
-        ("VYKONAVANIE_ID", "vykonavanie.id", "BIGINT"),
+        ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+        ("specifickycielprogramu_id", "specifickyCielProgramu.id", "BIGINT"),
+        ("vykonavanie_id", "vykonavanie.id", "BIGINT"),
     ]),
     "PROJEKT_ZMENAPROJEKT": ("zmenaProjekt", [
-        ("ID", "id", "BIGINT"),
-        ("CISLODODATKU", "cisloDodatku", "VARCHAR"),
-        ("PREDMET", "predmet", "VARCHAR"),
-        ("DATUMPLATNOSTI", "datumPlatnosti", "BIGINT"),
-        ("DATUMUCINNOSTI", "datumUcinnosti", "BIGINT"),
-        ("URL", "url", "VARCHAR"),
+        ("id", "id", "BIGINT"),
+        ("cislododatku", "cisloDodatku", "VARCHAR"),
+        ("predmet", "predmet", "VARCHAR"),
+        ("datumplatnosti", "datumPlatnosti", "BIGINT"),
+        ("datumucinnosti", "datumUcinnosti", "BIGINT"),
+        ("url", "url", "VARCHAR"),
     ]),
 }
 
 
+def migrate_table_prefix(con: duckdb.DuckDBPyConnection) -> None:
+    """One-time rename of pre-"itms21_"-prefix tables (and their ALL-CAPS
+    columns) from earlier runs; every step is idempotent/case-insensitive,
+    so this is safe to run on every invocation."""
+    bare_names = ["PROJEKT"] + list(CHILD_TABLES.keys()) + [
+        "PROJEKT_ZMENAPROJEKT_DOKUMENT",
+        "PROJEKT_ZMLUVAPROJEKT_DOKUMENT",
+    ]
+    for name in bare_names:
+        con.execute(f"ALTER TABLE IF EXISTS {name} RENAME TO {_t(name)}")
+        # Also catch a table already prefixed but with the old ALL-CAPS name
+        # (e.g. from a run of this script before lowercasing was added).
+        con.execute(f"ALTER TABLE IF EXISTS {TABLE_PREFIX}{name} RENAME TO {_t(name)}")
+
+    if _table_exists(con, TABLE_PROJEKT):
+        _rename_columns(con, TABLE_PROJEKT, [col for col, _, _ in PROJEKT_COLUMNS])
+
+    for table, (_, columns) in CHILD_TABLES.items():
+        full = _t(table)
+        if _table_exists(con, full):
+            con.execute(f"ALTER TABLE {full} RENAME COLUMN PROJECT_ID TO project_id")
+            _rename_columns(con, full, [col for col, _, _ in columns])
+
+    if _table_exists(con, _t("PROJEKT_ZMENAPROJEKT_DOKUMENT")):
+        full = _t("PROJEKT_ZMENAPROJEKT_DOKUMENT")
+        con.execute(f"ALTER TABLE {full} RENAME COLUMN PROJECT_ID TO project_id")
+        con.execute(f"ALTER TABLE {full} RENAME COLUMN ZMENAPROJEKT_ID TO zmenaprojekt_id")
+        _rename_columns(con, full, ["nazov", "uuid"])
+
+    if _table_exists(con, _t("PROJEKT_ZMLUVAPROJEKT_DOKUMENT")):
+        full = _t("PROJEKT_ZMLUVAPROJEKT_DOKUMENT")
+        con.execute(f"ALTER TABLE {full} RENAME COLUMN PROJECT_ID TO project_id")
+        _rename_columns(con, full, ["nazov", "uuid"])
+
+
 def ensure_full_schema(con: duckdb.DuckDBPyConnection) -> None:
     """Create PROJEKT and every PROJEKT_* child/grandchild table if missing."""
+    migrate_table_prefix(con)
+
     cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in PROJEKT_COLUMNS)
     con.execute(f"""
         CREATE TABLE IF NOT EXISTS {TABLE_PROJEKT} (
             {cols_sql},
-            PRIMARY KEY (ID)
+            PRIMARY KEY (id)
         )
     """)
 
     for table, (_, columns) in CHILD_TABLES.items():
         cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in columns)
         con.execute(f"""
-            CREATE TABLE IF NOT EXISTS {table} (
-                PROJECT_ID BIGINT,
+            CREATE TABLE IF NOT EXISTS {_t(table)} (
+                project_id BIGINT,
                 {cols_sql}
             )
         """)
 
     # Two grandchild tables: a "dokument" list living one level deeper than a
     # child-table row (PROJEKT_ZMENAPROJEKT) or the flattened PROJEKT row
-    # (zmluvaProjekt). Both carry PROJECT_ID so they join back to PROJEKT.
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS PROJEKT_ZMENAPROJEKT_DOKUMENT (
-            PROJECT_ID BIGINT,
-            ZMENAPROJEKT_ID BIGINT,
-            NAZOV VARCHAR,
-            UUID VARCHAR
+    # (zmluvaProjekt). Both carry project_id so they join back to PROJEKT.
+    con.execute(f"""
+        CREATE TABLE IF NOT EXISTS {_t("PROJEKT_ZMENAPROJEKT_DOKUMENT")} (
+            project_id BIGINT,
+            zmenaprojekt_id BIGINT,
+            nazov VARCHAR,
+            uuid VARCHAR
         )
     """)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS PROJEKT_ZMLUVAPROJEKT_DOKUMENT (
-            PROJECT_ID BIGINT,
-            NAZOV VARCHAR,
-            UUID VARCHAR
+    con.execute(f"""
+        CREATE TABLE IF NOT EXISTS {_t("PROJEKT_ZMLUVAPROJEKT_DOKUMENT")} (
+            project_id BIGINT,
+            nazov VARCHAR,
+            uuid VARCHAR
         )
     """)
 
@@ -433,7 +493,7 @@ def store_full_detail(con: duckdb.DuckDBPyConnection, detail: dict) -> None:
     values = [_get(detail, path) for _, path, _ in PROJEKT_COLUMNS]
     con.execute(
         f"INSERT INTO {TABLE_PROJEKT} ({columns_sql}) VALUES ({placeholders}) "
-        f"ON CONFLICT (ID) DO NOTHING",
+        f"ON CONFLICT (id) DO NOTHING",
         values,
     )
 
@@ -448,7 +508,7 @@ def store_full_detail(con: duckdb.DuckDBPyConnection, detail: dict) -> None:
             for item in items
         ]
         con.executemany(
-            f"INSERT INTO {table} (PROJECT_ID, {columns_sql}) VALUES (?, {placeholders})",
+            f"INSERT INTO {_t(table)} (project_id, {columns_sql}) VALUES (?, {placeholders})",
             rows,
         )
 
@@ -459,7 +519,7 @@ def store_full_detail(con: duckdb.DuckDBPyConnection, detail: dict) -> None:
             zmena_doc_rows.append([project_id, zmena_id, doc.get("nazov"), doc.get("uuid")])
     if zmena_doc_rows:
         con.executemany(
-            "INSERT INTO PROJEKT_ZMENAPROJEKT_DOKUMENT (PROJECT_ID, ZMENAPROJEKT_ID, NAZOV, UUID) "
+            f"INSERT INTO {_t('PROJEKT_ZMENAPROJEKT_DOKUMENT')} (project_id, zmenaprojekt_id, nazov, uuid) "
             "VALUES (?, ?, ?, ?)",
             zmena_doc_rows,
         )
@@ -467,7 +527,7 @@ def store_full_detail(con: duckdb.DuckDBPyConnection, detail: dict) -> None:
     zmluva_docs = (detail.get("zmluvaProjekt") or {}).get("dokument") or []
     if zmluva_docs:
         con.executemany(
-            "INSERT INTO PROJEKT_ZMLUVAPROJEKT_DOKUMENT (PROJECT_ID, NAZOV, UUID) VALUES (?, ?, ?)",
+            f"INSERT INTO {_t('PROJEKT_ZMLUVAPROJEKT_DOKUMENT')} (project_id, nazov, uuid) VALUES (?, ?, ?)",
             [[project_id, doc.get("nazov"), doc.get("uuid")] for doc in zmluva_docs],
         )
 
@@ -475,7 +535,7 @@ def store_full_detail(con: duckdb.DuckDBPyConnection, detail: dict) -> None:
 def get_known_ids(con: duckdb.DuckDBPyConnection) -> set[int]:
     """Ids already fully stored (both the simple summary and the full detail
     schema are written together), so we never re-fetch them."""
-    rows = con.execute(f"SELECT ID FROM {TABLE_PROJEKT}").fetchall()
+    rows = con.execute(f"SELECT id FROM {TABLE_PROJEKT}").fetchall()
     return {row[0] for row in rows}
 
 

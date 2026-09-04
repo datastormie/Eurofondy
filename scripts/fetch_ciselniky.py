@@ -27,8 +27,9 @@ DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/ciselniky/{kod}"
 
 DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate tables inside
 
-TABLE_LIST = "CISELNIK"
-TABLE_DETAIL = "CISELNIKY_DETAIL"
+TABLE_PREFIX = "itms21_"
+TABLE_LIST = f"{TABLE_PREFIX}CISELNIK".lower()
+TABLE_DETAIL = f"{TABLE_PREFIX}CISELNIKY_DETAIL".lower()
 
 MAX_WORKERS = 8
 REQUEST_TIMEOUT = 30
@@ -66,45 +67,72 @@ def fetch_detail(kod: str) -> list[dict] | None:
     return None
 
 
+def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
+    return con.execute(
+        "SELECT 1 FROM information_schema.tables WHERE lower(table_name) = lower(?)", [name]
+    ).fetchone() is not None
+
+
+def _rename_columns(con: duckdb.DuckDBPyConnection, table: str, columns: list[str]) -> None:
+    """Rename every column in `columns` from its old ALL-CAPS form to its
+    current lowercase form; matching is case-insensitive, so this is a no-op
+    once a column is already lowercase (safe to run on every invocation)."""
+    for col in columns:
+        con.execute(f"ALTER TABLE {table} RENAME COLUMN {col.upper()} TO {col}")
+
+
 def ensure_tables(con: duckdb.DuckDBPyConnection) -> None:
+    # One-time rename from the pre-"itms21_"-prefix / ALL-CAPS-column tables
+    # from earlier runs; every step is idempotent/case-insensitive, so this
+    # is safe to run on every invocation.
+    con.execute(f"ALTER TABLE IF EXISTS CISELNIK RENAME TO {TABLE_LIST}")
+    con.execute(f"ALTER TABLE IF EXISTS CISELNIKY_DETAIL RENAME TO {TABLE_DETAIL}")
+    if _table_exists(con, TABLE_LIST):
+        _rename_columns(con, TABLE_LIST, ["kod", "nazov", "popis"])
+    if _table_exists(con, TABLE_DETAIL):
+        _rename_columns(con, TABLE_DETAIL, [
+            "ciselnik_kod", "id", "kod", "kodzdroj", "nazovsk", "nazoven", "nazovde",
+            "popissk", "popisen", "popisde", "platnostod", "platnostdo",
+        ])
+
     con.execute(f"""
         CREATE TABLE IF NOT EXISTS {TABLE_LIST} (
-            KOD    VARCHAR PRIMARY KEY,
-            NAZOV  VARCHAR,
-            POPIS  VARCHAR
+            kod    VARCHAR PRIMARY KEY,
+            nazov  VARCHAR,
+            popis  VARCHAR
         )
     """)
     con.execute(f"""
         CREATE TABLE IF NOT EXISTS {TABLE_DETAIL} (
-            CISELNIK_KOD  VARCHAR,
-            ID            BIGINT,
-            KOD           VARCHAR,
-            KODZDROJ      VARCHAR,
-            NAZOVSK       VARCHAR,
-            NAZOVEN       VARCHAR,
-            NAZOVDE       VARCHAR,
-            POPISSK       VARCHAR,
-            POPISEN       VARCHAR,
-            POPISDE       VARCHAR,
-            PLATNOSTOD    BIGINT,
-            PLATNOSTDO    BIGINT,
-            PRIMARY KEY (CISELNIK_KOD, ID)
+            ciselnik_kod  VARCHAR,
+            id            BIGINT,
+            kod           VARCHAR,
+            kodzdroj      VARCHAR,
+            nazovsk       VARCHAR,
+            nazoven       VARCHAR,
+            nazovde       VARCHAR,
+            popissk       VARCHAR,
+            popisen       VARCHAR,
+            popisde       VARCHAR,
+            platnostod    BIGINT,
+            platnostdo    BIGINT,
+            PRIMARY KEY (ciselnik_kod, id)
         )
     """)
 
 
 def upsert_ciselnik(con: duckdb.DuckDBPyConnection, item: dict) -> None:
     con.execute(f"""
-        INSERT INTO {TABLE_LIST} (KOD, NAZOV, POPIS) VALUES (?, ?, ?)
-        ON CONFLICT (KOD) DO UPDATE SET
-            NAZOV = excluded.NAZOV,
-            POPIS = excluded.POPIS
+        INSERT INTO {TABLE_LIST} (kod, nazov, popis) VALUES (?, ?, ?)
+        ON CONFLICT (kod) DO UPDATE SET
+            nazov = excluded.nazov,
+            popis = excluded.popis
     """, [item.get("kod"), item.get("nazov"), item.get("popis")])
 
 
 def get_known_pairs(con: duckdb.DuckDBPyConnection) -> set[tuple[str, int]]:
-    """(CISELNIK_KOD, ID) pairs already stored, so detail rows are never re-inserted."""
-    rows = con.execute(f"SELECT CISELNIK_KOD, ID FROM {TABLE_DETAIL}").fetchall()
+    """(ciselnik_kod, id) pairs already stored, so detail rows are never re-inserted."""
+    rows = con.execute(f"SELECT ciselnik_kod, id FROM {TABLE_DETAIL}").fetchall()
     return {(row[0], row[1]) for row in rows}
 
 
@@ -123,8 +151,8 @@ def insert_detail_rows(con: duckdb.DuckDBPyConnection, ciselnik_kod: str, items:
     if rows:
         con.executemany(f"""
             INSERT INTO {TABLE_DETAIL} (
-                CISELNIK_KOD, ID, KOD, KODZDROJ, NAZOVSK, NAZOVEN, NAZOVDE,
-                POPISSK, POPISEN, POPISDE, PLATNOSTOD, PLATNOSTDO
+                ciselnik_kod, id, kod, kodzdroj, nazovsk, nazoven, nazovde,
+                popissk, popisen, popisde, platnostod, platnostdo
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, rows)
     return len(rows)

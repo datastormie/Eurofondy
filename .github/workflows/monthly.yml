@@ -38,6 +38,7 @@ jobs:
           python scripts/fetch_projects.py
           python scripts/fetch_ciselniky.py
           python scripts/fetch_vyzvy.py
+          python scripts/fetch_planovanavyzvy.py
 
       - name: Save DuckDB store to release
         env:
