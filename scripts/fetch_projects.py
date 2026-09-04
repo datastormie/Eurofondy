@@ -34,7 +34,8 @@ import requests
 LIST_URL = "https://api.itms21.sk/public/v1/projekt?limit=-1"
 DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/projekt/id/{id}"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate table inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 JSON_OUT_PATH = Path("docs/project_data.json")
 
 TABLE_PREFIX = "itms21_"
@@ -406,6 +407,380 @@ CHILD_TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
 }
 
 
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_CURRENT: (
+        "Flat summary of every funded project, one row per project id; feeds "
+        "docs/project_data.json for the projects.html page. Unlike "
+        "itms21_programs_current, this table is NOT refreshed on every run - "
+        "a row is only ever written once, when the project's detail is "
+        "first fetched (insertion is gated by the same 'id not yet known' "
+        "check as itms21_projekt), so its status/amounts are only as fresh "
+        "as that single fetch."
+    ),
+    TABLE_PROJEKT: (
+        "One row per funded project ('projekt'), created once a grant "
+        "application ('zonfp') is approved. Purely additive: once an id is "
+        "stored it is never re-fetched, updated, or deleted."
+    ),
+    _t("PROJEKT_AKTIVITY"): "Project activities carried out within the project.",
+    _t("PROJEKT_CIELOVASKUPINA"): "Target groups declared for the project.",
+    _t("PROJEKT_DODAVATEL"): "Suppliers/contractors engaged by the project.",
+    _t("PROJEKT_FINANCNYPLAN"): "Financial plan line items for the project, split by financing source (e.g. EU fund vs. national budget).",
+    _t("PROJEKT_FORMAPODPORY"): "Forms of support used by the project, by region category and specific objective.",
+    _t("PROJEKT_HOSPODARSKACINNOST"): "Economic activities (NACE-style classification) declared for the project, by region category and specific objective.",
+    _t("PROJEKT_INEUDAJE"): "Additional data items ('ine udaje') recorded for the project, together with the related entity's role and validity period.",
+    _t("PROJEKT_INTENZITY"): "Aid intensity records for the project.",
+    _t("PROJEKT_KATEGORIAREGIONOV"): "Region categories the project falls under.",
+    _t("PROJEKT_MAKROREGIONALNASTRATEGIAASTRATEGIAPREMORSKEOBLASTI"): (
+        "Macro-regional strategies and sea-basin strategies (e.g. EUSDR) the project contributes to, by region category and specific objective."
+    ),
+    _t("PROJEKT_MIESTOREALIZACIE"): "Places of implementation for the project.",
+    _t("PROJEKT_MIESTOREALIZACIEFULL"): "Detailed places of implementation (NUTS levels, municipality/district) for the project.",
+    _t("PROJEKT_MONITOROVACIETERMINY"): "Monitoring report deadlines defined for the project.",
+    _t("PROJEKT_OBLASTINTERVENCIE"): "Intervention fields (EU classification dimension) the project targets, by region category and specific objective.",
+    _t("PROJEKT_OPATRENIE"): "Measure(s) the project is funded under.",
+    _t("PROJEKT_ORGANIZACNEZLOZKY"): "Organisational units of the beneficiary involved in implementing the project.",
+    _t("PROJEKT_PARTNER"): "Project partners.",
+    _t("PROJEKT_POLOZKYROZPOCTU"): "Approved budget items for the project.",
+    _t("PROJEKT_PREDCHODCA"): "Links between this project and a predecessor/successor project (e.g. after a change/succession).",
+    _t("PROJEKT_PROJEKTOVYZAMERIUS"): "Project intention ('projektovy zamer IUS') linked to the project.",
+    _t("PROJEKT_RODOVAROVNOST"): "Gender-equality classifications tagged on the project, by region category and specific objective.",
+    _t("PROJEKT_SEKUNDARNYTEMATICKYOKRUH"): "Secondary thematic focus areas tagged on the project, by region category and specific objective.",
+    _t("PROJEKT_SPECIFICKYCIELPROGRAMU"): "Specific objective(s) the project contributes to.",
+    _t("PROJEKT_TYPAKCIE"): "Types of action carried out by the project, by region category and specific objective.",
+    _t("PROJEKT_TYPINTERVENCIE"): "Types of intervention used by the project, by region category and specific objective.",
+    _t("PROJEKT_UKAZOVATELVYSLEDKU"): "Result indicator targets for the project, by region category and specific objective.",
+    _t("PROJEKT_UKAZOVATELVYSTUPU"): "Output indicator targets for the project, by region category and specific objective.",
+    _t("PROJEKT_URCITATEMA"): "Specific thematic tags on the project, by region category and specific objective.",
+    _t("PROJEKT_UZEMNYMECHANIZMUSAZAMERANIE"): "Territorial mechanisms and focus (e.g. ITI, CLLD) used by the project, by region category and specific objective.",
+    _t("PROJEKT_VYKONAVANIE"): "Implementation modes tagged on the project, by region category and specific objective.",
+    _t("PROJEKT_ZMENAPROJEKT"): "Approved changes to the project (e.g. contract amendments).",
+    _t("PROJEKT_ZMENAPROJEKT_DOKUMENT"): (
+        "Documents attached to a project change/amendment. Grandchild rows carrying both project_id and "
+        "zmenaprojekt_id back to itms21_projekt and itms21_projekt_zmenaprojekt; inserted once when the "
+        "parent detail is first fetched, never updated/deleted."
+    ),
+    _t("PROJEKT_ZMLUVAPROJEKT_DOKUMENT"): (
+        "Documents attached to the project's funding contract ('zmluva o poskytnutie NFP'). Grandchild rows "
+        "carrying only project_id (the contract itself is flattened onto itms21_projekt, not its own table) "
+        "back to itms21_projekt; inserted once when the parent detail is first fetched, never updated/deleted."
+    ),
+}
+for _child_table in CHILD_TABLES:
+    TABLE_COMMENTS[_t(_child_table)] += (
+        " Child rows carrying project_id back to itms21_projekt; inserted "
+        "once when the parent detail is first fetched, never updated/deleted."
+    )
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_CURRENT: {
+        "project_id": "ITMS21 numeric id of the project.",
+        "kod": "Project code.",
+        "nazov": "Project name.",
+        "program_skratka": "Abbreviation of the parent programme.",
+        "program_nazov": "Name of the parent programme in Slovak.",
+        "prijimatel_nazov": "Name of the beneficiary (recipient) implementing the project.",
+        "prijimatel_ico": "Company registration number (ICO) of the beneficiary.",
+        "stav": "Status of the project at the time it was fetched.",
+        "vrealizacii": "Whether the project was being implemented at the time it was fetched.",
+        "ukonceny": "Whether the project was completed at the time it was fetched.",
+        "suma_eu": "EU-fund contribution, computed from the project's financial plan, in euro.",
+        "suma_sr": "Slovak national co-financing contribution, computed from the project's financial plan, in euro.",
+        "suma_spolu": "Total contribution (EU + national), in euro.",
+        "celkova_zazmluvnena_suma": "Total contracted project value at the time it was fetched, in euro.",
+        "poskytnute_prostriedky": "Funds disbursed to the project at the time it was fetched, in euro.",
+        "planovany_zaciatok": "Planned implementation start date (epoch milliseconds).",
+        "planovany_koniec": "Planned implementation end date (epoch milliseconds).",
+        "created_at": "Record creation timestamp in the source system (epoch milliseconds).",
+        "updated_at": "Record last-updated timestamp in the source system, at the time it was fetched (epoch milliseconds).",
+    },
+    TABLE_PROJEKT: {
+        "id": "ITMS21 numeric id of the project.",
+        "href": "API URL of this project's own detail resource.",
+        "kod": "Project code.",
+        "nazov": "Project name.",
+        "akronym": "Project acronym.",
+        "stav": "Current status of the project.",
+        "mrk": "Marginalized Roma community ('marginalizovana romska komunita', MRK) indicator/code for the project, when it targets this focus area.",
+        "zameranieprojektu": "Project focus/orientation.",
+        "ucel": "Stated purpose of the project.",
+        "popis": "Project description.",
+        "popiskapacityprijimatela": "Description of the beneficiary's implementation capacity.",
+        "popissituacieporealizacii": "Description of the expected situation after project implementation.",
+        "popissposoburealizacie": "Description of the project's implementation approach.",
+        "popisvychodiskovejsituacie": "Description of the baseline situation before the project.",
+        "celkovazazmluvnenasuma": "Total contracted project value, in euro.",
+        "celkovazazmluvnenasumapovodna": "Original total contracted project value before amendments, in euro.",
+        "zazmluvnenasumanfp": "Contracted grant amount (NFP), in euro.",
+        "poskytnuteprostriedky": "Funds disbursed to the project so far, in euro.",
+        "datumzaciatkuhlavnychaktivit": "Start date of the main activities (epoch milliseconds).",
+        "datumkoncahlavnychaktivit": "End date of the main activities (epoch milliseconds).",
+        "dlzkacelkovahlavnychaktivit": "Total duration of the main activities, in months.",
+        "dlzkacelkovaprojektu": "Total project duration, in months.",
+        "planovanarealizaciazaciatok": "Planned implementation start date (epoch milliseconds).",
+        "planovanarealizaciakoniec": "Planned implementation end date (epoch milliseconds).",
+        "skutocnarealizaciazaciatok": "Actual implementation start date (epoch milliseconds).",
+        "skutocnarealizaciakoniec": "Actual implementation end date (epoch milliseconds).",
+        "jeotvorenazmena": "Whether an open/pending change request exists for the project.",
+        "makategoriuregionov": "Whether the project has a region category assigned.",
+        "mimoriadneukoncenyneprispel": "Whether the project was terminated early without receiving EU contribution.",
+        "mimoriadneukoncenyprispel": "Whether the project was terminated early but still received EU contribution.",
+        "obsahujemiestorealizaciezahranicie": "Whether the project's implementation includes a place abroad.",
+        "realizaciaaktivitpozastavena": "Whether implementation of the project's activities is currently suspended.",
+        "udrzatelnyrozvojmiest": "Whether the project supports sustainable urban development.",
+        "ukonceny": "Whether the project is completed.",
+        "vrealizacii": "Whether the project is currently being implemented.",
+        "vylucenyzfinancovania": "Whether the project has been excluded from financing.",
+        "prijimatel_id": "Id of the beneficiary (recipient) implementing the project.",
+        "program_id": "Id of the parent programme this project belongs to.",
+        "vyzva_id": "Id of the call this project was funded under (itms21_vyzva.id).",
+        "zonfp_id": "Id of the grant application this project originated from (itms21_zonfp.id).",
+        "poskytovatelorgan_id": "Id of the provider/managing body organ responsible for the project.",
+        "poskytovatelorgan_kod": "Code of the provider/managing body organ.",
+        "poskytovatelorgan_nazov": "Name of the provider/managing body organ.",
+        "poskytovatelsubjekt_id": "Id of the provider entity/institution.",
+        "vyhlasovatelorgan_id": "Id of the organ that announced the call the project was funded under.",
+        "vyhlasovatelorgan_kod": "Code of the organ that announced the call.",
+        "vyhlasovatelorgan_nazov": "Name of the organ that announced the call.",
+        "zmluvaprojekt_id": "Id of the project's funding contract ('zmluva o poskytnutie NFP').",
+        "zmluvaprojekt_cislo": "Contract number of the project's funding contract.",
+        "zmluvaprojekt_datumplatnosti": "Validity date of the project's funding contract (epoch milliseconds).",
+        "zmluvaprojekt_datumucinnosti": "Effective date of the project's funding contract (epoch milliseconds).",
+        "zmluvaprojekt_url": "URL of the published funding contract document.",
+        "createdat": "Record creation timestamp in the source system (epoch milliseconds).",
+        "updatedat": "Record last-updated timestamp in the source system (epoch milliseconds).",
+    },
+    _t("PROJEKT_AKTIVITY"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the project activity (itms21_aktivitaprojekt.id).",
+    },
+    _t("PROJEKT_CIELOVASKUPINA"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the target group.",
+    },
+    _t("PROJEKT_DODAVATEL"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "dic": "Supplier's tax identification number (DIC).",
+        "ico": "Supplier's company registration number (ICO).",
+        "ineidentifikacnecislo": "Supplier's other identification number, when it has neither a DIC nor an ICO.",
+        "nazov": "Supplier name.",
+    },
+    _t("PROJEKT_FINANCNYPLAN"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "suma": "Amount for this financing-source line, in euro.",
+        "zdroj_id": "Id of the financing source (e.g. EU fund vs. national budget).",
+    },
+    _t("PROJEKT_FORMAPODPORY"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "formapodpory_id": "Id of the form of support (e.g. grant, refundable assistance).",
+        "kategoriaregionov_id": "Id of the region category this form of support applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this form of support applies to.",
+    },
+    _t("PROJEKT_HOSPODARSKACINNOST"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "hospodarskacinnost_id": "Id of the declared economic activity (NACE-style classification).",
+        "kategoriaregionov_id": "Id of the region category this economic activity applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this economic activity applies to.",
+    },
+    _t("PROJEKT_INEUDAJE"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "ineudajesc_ineudaje_kod": "Code of the additional data item.",
+        "ineudajesc_ineudaje_mernajednotka_id": "Id of the unit of measurement for the additional data item.",
+        "ineudajesc_ineudaje_nazovde": "Additional data item name in German.",
+        "ineudajesc_ineudaje_nazoven": "Additional data item name in English.",
+        "ineudajesc_ineudaje_nazovsk": "Additional data item name in Slovak.",
+        "ineudajesc_kategoriaregionov_id": "Id of the region category this additional data item applies to.",
+        "ineudajesc_specifickycielprogramu_id": "Id of the specific objective this additional data item applies to.",
+        "subjektnaprojekt_platnostdo": "End of the related entity's validity period on the project (epoch milliseconds).",
+        "subjektnaprojekt_platnostod": "Start of the related entity's validity period on the project (epoch milliseconds).",
+        "subjektnaprojekt_rola": "Role of the related entity on the project.",
+        "subjektnaprojekt_subjekt_id": "Id of the related entity/institution.",
+    },
+    _t("PROJEKT_INTENZITY"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the aid intensity record.",
+    },
+    _t("PROJEKT_KATEGORIAREGIONOV"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the region category.",
+    },
+    _t("PROJEKT_MAKROREGIONALNASTRATEGIAASTRATEGIAPREMORSKEOBLASTI"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this strategy association applies to.",
+        "makroregionalnastrategiaastrategiapremorskeoblasti_id": "Id of the macro-regional strategy or sea-basin strategy (e.g. EUSDR).",
+        "specifickycielprogramu_id": "Id of the specific objective this strategy association applies to.",
+    },
+    _t("PROJEKT_MIESTOREALIZACIE"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the place of implementation.",
+    },
+    _t("PROJEKT_MIESTOREALIZACIEFULL"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "lokalita": "Free-text description of the location.",
+        "nuts2_id": "Id of the NUTS2 region classification.",
+        "nuts3_id": "Id of the NUTS3 region classification.",
+        "nuts4_id": "Id of the NUTS4 region classification.",
+        "nuts5_id": "Id of the NUTS5 region classification.",
+        "obecmimoeu": "Municipality name, when the place of implementation is outside the EU.",
+        "okresmimoeu": "District name, when the place of implementation is outside the EU.",
+        "samospravnykrajmimoeu": "Self-governing region name, when the place of implementation is outside the EU.",
+        "stat_id": "Id of the country of implementation.",
+    },
+    _t("PROJEKT_MONITOROVACIETERMINY"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the monitoring deadline record.",
+        "datumpredlozenianajneskorsi": "Latest allowed submission date for this monitoring report (epoch milliseconds).",
+        "poradovecislo": "Ordering position of this monitoring deadline within the project.",
+        "terminmonitorovania": "Monitoring period date this report covers (epoch milliseconds).",
+        "typmonitorovania": "Type of monitoring report (e.g. periodic, final).",
+    },
+    _t("PROJEKT_OBLASTINTERVENCIE"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this intervention field applies to.",
+        "oblastintervencie_id": "Id of the intervention field (EU classification dimension code).",
+        "specifickycielprogramu_id": "Id of the specific objective this intervention field applies to.",
+    },
+    _t("PROJEKT_OPATRENIE"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the measure the project is funded under (itms21_program_opatrenie.id).",
+    },
+    _t("PROJEKT_ORGANIZACNEZLOZKY"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the organisational unit.",
+        "nazov": "Organisational unit name.",
+        "adresa_ulica": "Street of the organisational unit's address.",
+        "adresa_cislo": "Street/building number of the organisational unit's address.",
+        "adresa_psc": "Postal code of the organisational unit's address.",
+        "adresa_obec": "Municipality of the organisational unit's address.",
+        "adresa_stat_id": "Id of the country of the organisational unit's address.",
+    },
+    _t("PROJEKT_PARTNER"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the project partner.",
+    },
+    _t("PROJEKT_POLOZKYROZPOCTU"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the approved budget item.",
+    },
+    _t("PROJEKT_PREDCHODCA"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "platnostnaslednikaod": "Start date of the successor's validity (epoch milliseconds).",
+        "platnostpredchodcudo": "End date of the predecessor's validity (epoch milliseconds).",
+        "naslednik_rola": "Role of the successor project in the relationship.",
+        "naslednik_platnostod": "Start date of the successor project's validity (epoch milliseconds).",
+        "naslednik_platnostdo": "End date of the successor project's validity (epoch milliseconds).",
+        "naslednik_subjekt_id": "Id of the successor project's entity.",
+        "predchodca_rola": "Role of the predecessor project in the relationship.",
+        "predchodca_platnostod": "Start date of the predecessor project's validity (epoch milliseconds).",
+        "predchodca_platnostdo": "End date of the predecessor project's validity (epoch milliseconds).",
+        "predchodca_subjekt_id": "Id of the predecessor project's entity.",
+    },
+    _t("PROJEKT_PROJEKTOVYZAMERIUS"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the linked project intention ('projektovy zamer IUS').",
+    },
+    _t("PROJEKT_RODOVAROVNOST"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this gender-equality tag applies to.",
+        "rodovarovnost_id": "Id of the gender-equality classification.",
+        "specifickycielprogramu_id": "Id of the specific objective this gender-equality tag applies to.",
+    },
+    _t("PROJEKT_SEKUNDARNYTEMATICKYOKRUH"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this thematic focus applies to.",
+        "sekundarnytematickyokruh_id": "Id of the secondary thematic focus area.",
+        "specifickycielprogramu_id": "Id of the specific objective this thematic focus applies to.",
+    },
+    _t("PROJEKT_SPECIFICKYCIELPROGRAMU"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the specific objective the project contributes to (itms21_program_specifickycielprogramu.id).",
+    },
+    _t("PROJEKT_TYPAKCIE"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this type of action applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this type of action applies to.",
+        "typakcie_id": "Id of the type of action.",
+    },
+    _t("PROJEKT_TYPINTERVENCIE"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this type of intervention applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this type of intervention applies to.",
+        "typintervencie_id": "Id of the type of intervention.",
+    },
+    _t("PROJEKT_UKAZOVATELVYSLEDKU"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "cielovahodnotaspolu": "Total target value of the result indicator.",
+        "vychodiskovahodnotaspolu": "Total baseline value of the result indicator.",
+        "ukazovatelprojektovysc_id": "Id of the underlying project-level result-indicator definition.",
+        "ukazovatelprojektovysc_kategoriaregionov_id": "Id of the region category this indicator definition applies to.",
+        "ukazovatelprojektovysc_specifickycielprogramu_id": "Id of the specific objective this indicator definition applies to.",
+        "ukazovatelprojektovysc_ukazovatelprojektovy_id": "Id of the underlying project-level indicator definition.",
+    },
+    _t("PROJEKT_UKAZOVATELVYSTUPU"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "cielovahodnotaspolu": "Total target value of the output indicator.",
+        "vychodiskovahodnotaspolu": "Total baseline value of the output indicator.",
+        "ukazovatelprojektovysc_id": "Id of the underlying project-level output-indicator definition.",
+        "ukazovatelprojektovysc_kategoriaregionov_id": "Id of the region category this indicator definition applies to.",
+        "ukazovatelprojektovysc_specifickycielprogramu_id": "Id of the specific objective this indicator definition applies to.",
+        "ukazovatelprojektovysc_ukazovatelprojektovy_id": "Id of the underlying project-level indicator definition.",
+    },
+    _t("PROJEKT_URCITATEMA"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this thematic tag applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this thematic tag applies to.",
+        "urcitatema_id": "Id of the specific theme.",
+    },
+    _t("PROJEKT_UZEMNYMECHANIZMUSAZAMERANIE"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this territorial mechanism applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this territorial mechanism applies to.",
+        "uzemnymechanizmusazameranie_id": "Id of the territorial mechanism and focus (e.g. ITI, CLLD).",
+    },
+    _t("PROJEKT_VYKONAVANIE"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "kategoriaregionov_id": "Id of the region category this implementation mode applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this implementation mode applies to.",
+        "vykonavanie_id": "Id of the implementation mode.",
+    },
+    _t("PROJEKT_ZMENAPROJEKT"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "id": "Id of the project change/amendment.",
+        "cislododatku": "Amendment (dodatok) number.",
+        "predmet": "Subject of the change.",
+        "datumplatnosti": "Validity date of the change (epoch milliseconds).",
+        "datumucinnosti": "Effective date of the change (epoch milliseconds).",
+        "url": "URL of the published amendment document.",
+    },
+    _t("PROJEKT_ZMENAPROJEKT_DOKUMENT"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "zmenaprojekt_id": "Id of the parent project change/amendment (itms21_projekt_zmenaprojekt.id).",
+        "nazov": "Document name.",
+        "uuid": "Document's file identifier (uuid), used to build its download URL.",
+    },
+    _t("PROJEKT_ZMLUVAPROJEKT_DOKUMENT"): {
+        "project_id": "Id of the parent project (itms21_projekt.id).",
+        "nazov": "Document name.",
+        "uuid": "Document's file identifier (uuid), used to build its download URL.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
 def migrate_table_prefix(con: duckdb.DuckDBPyConnection) -> None:
     """One-time rename of pre-"itms21_"-prefix tables (and their ALL-CAPS
     columns) from earlier runs; every step is idempotent/case-insensitive,
@@ -586,8 +961,11 @@ def sync_projects() -> tuple[int, int, int]:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_table(con)
     ensure_full_schema(con)
+    apply_comments(con)
 
     print("Fetching project list...")
     list_items = fetch_list()
@@ -629,6 +1007,9 @@ def sync_projects() -> tuple[int, int, int]:
 
 def export_to_json() -> None:
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
+    apply_comments(con)
     df = con.execute(f"SELECT * FROM {TABLE_CURRENT} ORDER BY suma_spolu DESC").fetchdf()
     con.close()
 

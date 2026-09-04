@@ -25,7 +25,8 @@ import requests
 LIST_URL = "https://api.itms21.sk/public/v1/aktivitaprojekt"
 DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/aktivitaprojekt/id/{id}"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate table inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_AKTIVITAPROJEKT = f"{TABLE_PREFIX}aktivitaprojekt"
@@ -119,6 +120,47 @@ AKTIVITAPROJEKT_COLUMNS: list[tuple[str, str, str]] = [
 ]
 
 
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_AKTIVITAPROJEKT: (
+        "One row per project activity ('aktivita projektu'), a discrete "
+        "activity carried out within a funded project. Purely additive: once "
+        "an id is stored it is never re-fetched, updated, or deleted, even "
+        "if it disappears from a later API list response."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_AKTIVITAPROJEKT: {
+        "id": "ITMS21 numeric id of the project activity.",
+        "href": "API URL of this project activity's own detail resource.",
+        "kod": "Project activity code.",
+        "nazov": "Project activity name.",
+        "datumzaciatkuplanovany": "Planned start date of the activity (epoch milliseconds).",
+        "datumzaciatkuskutocny": "Actual start date of the activity (epoch milliseconds).",
+        "datumkoncaplanovany": "Planned end date of the activity (epoch milliseconds).",
+        "datumkoncaskutocny": "Actual end date of the activity (epoch milliseconds).",
+        "projekt_id": "Id of the parent project this activity belongs to (itms21_projekt.id).",
+        "subjekt_id": "Id of the entity/institution responsible for carrying out this activity.",
+        "typakcieprogramu_id": "Id of the programme action type this activity is classified under (itms21_program_typakcieprogramu.id).",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
 def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
     cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in AKTIVITAPROJEKT_COLUMNS)
     con.execute(f"""
@@ -158,7 +200,10 @@ def sync_aktivitaprojekt() -> tuple[int, int, int]:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_table(con)
+    apply_comments(con)
 
     print("Fetching aktivitaprojekt list...")
     list_items = fetch_list()

@@ -23,7 +23,8 @@ import requests
 
 API_URL = "https://api.itms21.sk/public/v1/typakcieprogramu"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate table inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_TYPAKCIEPROGRAMU = f"{TABLE_PREFIX}program_typakcieprogramu"
@@ -70,6 +71,48 @@ TYPAKCIEPROGRAMU_COLUMNS: list[tuple[str, str, str]] = [
 ]
 
 
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_TYPAKCIEPROGRAMU: (
+        "One row per programme action type ('typ akcie programu'), a "
+        "classification of the kind of intervention a measure/specific "
+        "objective funds within a given region category. Existing rows are "
+        "fully rewritten with the latest API data on every sync; nothing is "
+        "ever deleted."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_TYPAKCIEPROGRAMU: {
+        "id": "ITMS21 numeric id of the programme action type.",
+        "href": "API URL of this programme action type's own detail resource.",
+        "kod": "Programme action type code.",
+        "nazovsk": "Programme action type name in Slovak.",
+        "nazoven": "Programme action type name in English.",
+        "nazovde": "Programme action type name in German.",
+        "kategoriaregionov_id": "Id of the region category this action type applies to (e.g. less-developed vs. more-developed region).",
+        "opatrenie_id": "Id of the parent measure this action type belongs to (itms21_program_opatrenie.id), when applicable.",
+        "specifickycielprogramu_id": "Id of the parent specific objective this action type belongs to (itms21_program_specifickycielprogramu.id), when applicable.",
+        "createdat": "Record creation timestamp in the source system.",
+        "updatedat": "Record last-updated timestamp in the source system.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
 def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
     cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in TYPAKCIEPROGRAMU_COLUMNS)
     con.execute(f"""
@@ -100,7 +143,10 @@ def sync_typakcieprogramu() -> int:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_table(con)
+    apply_comments(con)
 
     print("Fetching typakcieprogramu list...")
     items = fetch_typakcieprogramu()

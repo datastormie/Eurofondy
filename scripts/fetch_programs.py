@@ -20,7 +20,8 @@ import requests
 
 API_URL = "https://api.itms21.sk/public/v1/program?limit=-1"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate table inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 JSON_OUT_PATH = Path("docs/program_data.json")
 
 TABLE_PREFIX = "itms21_"
@@ -64,6 +65,52 @@ def flatten_program(d: dict) -> dict:
         "created_at": d.get("createdAt"),
         "updated_at": d.get("updatedAt"),
     }
+
+
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_CURRENT: (
+        "Current snapshot of every Operational Programme of the 2021-2027 "
+        "programming period, as returned by the ITMS21 API. Rows are fully "
+        "overwritten on every sync run, so this always reflects the latest "
+        "published data; nothing is ever deleted."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_CURRENT: {
+        "program_id": "ITMS21 numeric id of the programme.",
+        "kod": "Short programme code (e.g. 'PSK', 'PVaI').",
+        "nazov_sk": "Full programme name in Slovak.",
+        "nazov_en": "Full programme name in English.",
+        "skratka": "Programme abbreviation.",
+        "suma_eu": "Total EU-fund allocation for the programme, in euro.",
+        "suma_sr": "Total Slovak national co-financing allocation, in euro.",
+        "suma_spolu": "Total programme allocation (EU + national co-financing), in euro.",
+        "kod_cci": "EU Commission's CCI reference code identifying the programme.",
+        "typ_programu": "Programme type (e.g. national operational programme, cross-border cooperation).",
+        "riadiaci_organ": "Name of the managing authority responsible for the programme.",
+        "subjekt_nazov": "Name of the institution acting as the managing authority.",
+        "ico": "Slovak company registration number (ICO) of the managing authority.",
+        "obec": "Municipality/city of the managing authority's registered address.",
+        "created_at": "Record creation timestamp in the source system (epoch milliseconds).",
+        "updated_at": "Record last-updated timestamp in the source system (epoch milliseconds).",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
 
 
 def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
@@ -132,7 +179,10 @@ def sync_programs() -> tuple[int, int]:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_table(con)
+    apply_comments(con)
 
     print("Fetching program list...")
     records = fetch_programs()
@@ -150,6 +200,8 @@ def sync_programs() -> tuple[int, int]:
 
 def export_to_json() -> None:
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     df = con.execute(f"SELECT * FROM {TABLE_CURRENT} ORDER BY suma_spolu DESC").fetchdf()
     con.close()
 

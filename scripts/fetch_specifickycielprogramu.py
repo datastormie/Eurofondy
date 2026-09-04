@@ -23,7 +23,8 @@ import requests
 
 API_URL = "https://api.itms21.sk/public/v1/specifickycielprogramu"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate tables inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate tables inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_SCP = f"{TABLE_PREFIX}program_specifickycielprogramu"
@@ -70,6 +71,58 @@ SCP_COLUMNS: list[tuple[str, str, str]] = [
     ("createdat", "createdAt", "VARCHAR"),
     ("updatedat", "updatedAt", "VARCHAR"),
 ]
+
+
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_SCP: (
+        "One row per programme specific objective ('specificky ciel "
+        "programu'), a funding goal nested under a priority axis, under "
+        "which measures ('opatrenie') are grouped. Existing rows (and their "
+        "kategoriaregionov child rows) are fully rewritten with the latest "
+        "API data on every sync; nothing is ever deleted."
+    ),
+    TABLE_SCP_KATEGORIAREGIONOV: (
+        "Child rows listing which region categories (e.g. less-developed vs. "
+        "more-developed region) a specific objective applies to. Fully "
+        "refreshed alongside its parent row on every sync."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_SCP: {
+        "id": "ITMS21 numeric id of the specific objective.",
+        "href": "API URL of this specific objective's own detail resource.",
+        "kod": "Specific objective code.",
+        "nazovsk": "Specific objective name in Slovak.",
+        "nazoven": "Specific objective name in English.",
+        "nazovde": "Specific objective name in German.",
+        "fond_id": "Id of the EU fund (e.g. ERDF, ESF+, Cohesion Fund) financing this specific objective.",
+        "priorita_id": "Id of the parent priority axis this specific objective belongs to (itms21_program_priorita.id).",
+        "program_id": "Id of the parent programme this specific objective belongs to (itms21_programs_current.program_id).",
+        "technickaasistencia": "Whether this specific objective funds technical assistance rather than a substantive intervention.",
+        "createdat": "Record creation timestamp in the source system.",
+        "updatedat": "Record last-updated timestamp in the source system.",
+    },
+    TABLE_SCP_KATEGORIAREGIONOV: {
+        "specifickycielprogramu_id": "Id of the parent specific objective (itms21_program_specifickycielprogramu.id).",
+        "id": "Id of the region category that applies to this specific objective.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
 
 
 def ensure_tables(con: duckdb.DuckDBPyConnection) -> None:
@@ -121,7 +174,10 @@ def sync_specifickycielprogramu() -> int:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_tables(con)
+    apply_comments(con)
 
     print("Fetching specifickycielprogramu list...")
     items = fetch_specifickycielprogramu()

@@ -22,7 +22,8 @@ import requests
 
 API_URL = "https://api.itms21.sk/public/v1/opatrenie"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate table inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_OPATRENIE = f"{TABLE_PREFIX}program_opatrenie"
@@ -67,6 +68,46 @@ OPATRENIE_COLUMNS: list[tuple[str, str, str]] = [
 ]
 
 
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_OPATRENIE: (
+        "One row per programme measure ('opatrenie'), a funding sub-category "
+        "nested under a programme's specific objective, under which calls "
+        "for proposals ('vyzva') are announced. Existing rows are fully "
+        "rewritten with the latest API data on every sync; nothing is ever "
+        "deleted."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_OPATRENIE: {
+        "id": "ITMS21 numeric id of the measure.",
+        "href": "API URL of this measure's own detail resource.",
+        "kod": "Measure code.",
+        "nazovsk": "Measure name in Slovak.",
+        "nazoven": "Measure name in English.",
+        "nazovde": "Measure name in German.",
+        "specifickycielprogramu_id": "Id of the parent specific objective this measure belongs to (itms21_program_specifickycielprogramu.id).",
+        "createdat": "Record creation timestamp in the source system.",
+        "updatedat": "Record last-updated timestamp in the source system.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
 def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
     cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in OPATRENIE_COLUMNS)
     con.execute(f"""
@@ -97,7 +138,10 @@ def sync_opatrenie() -> int:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_table(con)
+    apply_comments(con)
 
     print("Fetching opatrenie list...")
     items = fetch_opatrenie()

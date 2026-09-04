@@ -1,12 +1,15 @@
 ---
 name: eurofondy-itms21-fetch
-description: Conventions for writing or modifying a scripts/fetch_*.py script that pulls data from the ITMS21 public API (api.itms21.sk) into data/eurofondy.duckdb. Use this whenever adding a new ITMS21 endpoint, adding a new field/child-table to an existing fetch script, debugging why a fetch script re-fetches or duplicates rows, or wiring a new script into .github/workflows/monthly.yml. Also use when the user mentions ITMS21, DuckDB sync scripts, or "fetch script" in this repo, even if they don't name a specific file.
+description: Conventions for writing or modifying a scripts/fetch_*.py script that pulls data from the ITMS21 public API (api.itms21.sk) into the `slovakia` schema of data/eufunds.duckdb. Use this whenever adding a new ITMS21 endpoint, adding a new field/child-table to an existing fetch script, debugging why a fetch script re-fetches or duplicates rows, or wiring a new script into .github/workflows/monthly.yml. Also use when the user mentions ITMS21, DuckDB sync scripts, or "fetch script" in this repo, even if they don't name a specific file.
 ---
 
 # Eurofondy ITMS21 fetch scripts
 
 All `scripts/fetch_*.py` files pull from `https://api.itms21.sk/public/v1/...` into
-one shared DuckDB file, `data/eurofondy.duckdb`. They are run monthly by
+one shared DuckDB file, `data/eufunds.duckdb`, all tables living in the `slovakia`
+schema (each script sets `DB_SCHEMA = "slovakia"` and runs `CREATE SCHEMA IF NOT
+EXISTS` + `SET schema = ...` right after connecting — copy this on every new
+script too). They are run monthly by
 `.github/workflows/monthly.yml`, in a fixed order (roughly: programs → projects →
 ciselniky → vyzvy → planovanavyzvy → priorita → specifickycielprogramu → opatrenie
 → typakcieprogramu → zonfp → zop → aktivitaprojekt). Every script is independent
@@ -101,6 +104,24 @@ don't add a JSON export or website page unless the user asks for one.
 - **`main()`** always does the sync, prints a one-line summary
   (`"Done. {total} total in list, {fetched} newly fetched, {failed} failed."`),
   then calls `export_to_json()` if applicable.
+- **Table/column documentation**: every table and column carries an English
+  `COMMENT ON` description, stored in-database (queryable via
+  `duckdb_tables()` / `duckdb_columns()`), not in a separate doc file. Each
+  script declares `TABLE_COMMENTS: dict[str, str]` (table name → one-sentence
+  description of what the table holds and its sync semantics — additive vs.
+  overwritten) and `COLUMN_COMMENTS: dict[str, dict[str, str]]` (table name →
+  {column name → one-sentence description}) right before its `ensure_table`/
+  `ensure_full_schema` function, plus the shared `_esc()` (single-quote
+  escaping) and `apply_comments(con)` helpers (copy verbatim — same shape in
+  every script). `apply_comments(con)` is called once, right after
+  `ensure_table`/`ensure_full_schema`, in every function that opens a
+  connection (both the main sync function and `export_to_json()`, when
+  present). `COMMENT ON` simply overwrites, so this is idempotent and safe to
+  run on every invocation — it's what keeps a brand-new table/column
+  documented automatically the moment a script adds one, with no separate
+  backfill step required. When adding a new column to an existing table (or a
+  new child table), add its description to the relevant dict in the same
+  change.
 
 ## Wiring in a new script
 
@@ -113,7 +134,7 @@ don't add a JSON export or website page unless the user asks for one.
    `git add` line in the workflow's "Commit and push updated data" step, and
    see [[eurofondy-website-brand]] before touching any `docs/*.html`/`*.js`/
    `*.css` to add a page or nav link for it.
-4. Don't touch `data/eurofondy.duckdb` locally in a way that fights the
+4. Don't touch `data/eufunds.duckdb` locally in a way that fights the
    workflow's release-based persistence (`gh release download/upload
    data-store`) — that file is restored from a GitHub Release asset at the
    start of each monthly run, not committed to git.

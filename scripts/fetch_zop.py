@@ -30,7 +30,8 @@ import requests
 LIST_URL = "https://api.itms21.sk/public/v1/zop?limit=-1"
 DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/zop/id/{id}"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate tables inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate tables inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_ZOP = f"{TABLE_PREFIX}zop"
@@ -140,6 +141,121 @@ CHILD_TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
         ("vyskabezdph", "vyskaBezDph", "VARCHAR"),
     ]),
 }
+
+
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_ZOP: (
+        "One row per payment request ('ziadost o platbu', ZoP) submitted for "
+        "reimbursement of project expenditure. Purely additive: once an id "
+        "is stored it is never re-fetched, updated, or deleted."
+    ),
+    _t("predkladanazasubjekty"): (
+        "Entities on whose behalf a payment request is submitted (e.g. partner organisations). "
+        "Child rows carrying zop_id back to itms21_zop; inserted once when the parent detail is "
+        "first fetched, never updated/deleted."
+    ),
+    _t("vydavky"): (
+        "Individual expenditure items claimed in a payment request. Child rows carrying zop_id "
+        "back to itms21_zop; inserted once when the parent detail is first fetched, never updated/deleted."
+    ),
+    _t("vydavky_sumaneziadananapreplatenie"): (
+        "Amounts not claimed for reimbursement within an expenditure item, broken down by reason/category. "
+        "Grandchild rows carrying zop_id and vydavky_id back to itms21_zop and itms21_zop_vydavky; "
+        "inserted once when the parent detail is first fetched, never updated/deleted."
+    ),
+    _t("vydavky_verejneobstaravanie"): (
+        "Public procurement procedures linked to an expenditure item. Grandchild rows carrying "
+        "zop_id and vydavky_id back to itms21_zop and itms21_zop_vydavky; inserted once when the "
+        "parent detail is first fetched, never updated/deleted."
+    ),
+    _t("vydavky_zmluvaverejneobstaravanie"): (
+        "Public procurement contracts linked to an expenditure item. Grandchild rows carrying "
+        "zop_id and vydavky_id back to itms21_zop and itms21_zop_vydavky; inserted once when the "
+        "parent detail is first fetched, never updated/deleted."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_ZOP: {
+        "id": "ITMS21 numeric id of the payment request.",
+        "href": "API URL of this payment request's own detail resource.",
+        "kod": "Payment request code.",
+        "typ": "Type of the payment request.",
+        "createdat": "Record creation timestamp in the source system.",
+        "updatedat": "Record last-updated timestamp in the source system.",
+        "datumprijatia": "Date the payment request was received.",
+        "datumuhrady": "Date the payment request was settled/paid.",
+        "hlavnycezhranicnypartner_id": "Id of the lead cross-border partner, for cross-border cooperation projects.",
+        "narokovanasuma": "Total amount claimed in the payment request, in euro.",
+        "neuhradena": "Whether the payment request remains unpaid.",
+        "predfinancovanie_id": "Id of the related pre-financing record, when this request draws on advance/pre-financing.",
+        "predkladanaza_id": "Id of the entity the payment request is submitted on behalf of.",
+        "prijimatel_id": "Id of the beneficiary (recipient) submitting the payment request.",
+        "projekt_id": "Id of the parent project this payment request belongs to (itms21_projekt.id).",
+        "vyplacasapartnerovi": "Whether the payment is made out to a partner rather than the main beneficiary.",
+        "zopjezaverecna": "Whether this is the final payment request for the project.",
+        "zoppredlozenazaviacsubjektov": "Whether the payment request was submitted on behalf of more than one entity.",
+    },
+    _t("predkladanazasubjekty"): {
+        "zop_id": "Id of the parent payment request (itms21_zop.id).",
+        "platisapriamosubjektu": "Whether the payment is made directly to this entity.",
+        "subjekt_id": "Id of the entity the payment request is submitted for.",
+        "typsubjektunaprojekte": "Type of the entity's role on the project (e.g. partner, beneficiary).",
+    },
+    _t("vydavky"): {
+        "zop_id": "Id of the parent payment request (itms21_zop.id).",
+        "id": "Id of the expenditure item.",
+        "datumuhrady": "Settlement/payment date of the expenditure item (epoch milliseconds).",
+        "dokladpolozka_id": "Id of the accounting-document line item.",
+        "dph": "VAT amount/handling of the expenditure item.",
+        "druhvydavku": "Kind of expenditure.",
+        "ekonomickaklasifikacia": "Economic classification code of the expenditure.",
+        "funkcnaklasifikacia": "Functional classification code of the expenditure.",
+        "investicnaakciaprijimatela": "Beneficiary's investment action reference.",
+        "klasifikaciajednorazovehotitulu": "Classification of a one-off expenditure title.",
+        "nazov": "Name/description of the expenditure item.",
+        "polozkarozpoctu_id": "Id of the linked budget item (itms21_zonfp_polozkyrozpoctuschvalene.id).",
+        "poradovecislo": "Ordering position of the expenditure item within the payment request.",
+        "sumaziadananapreplatenie": "Amount claimed for reimbursement for this expenditure item, in euro.",
+        "uctovnydoklad_id": "Id of the accounting document (e.g. invoice) backing the expenditure.",
+        "vyskabezdph": "Amount of the expenditure excluding VAT.",
+    },
+    _t("vydavky_sumaneziadananapreplatenie"): {
+        "zop_id": "Id of the parent payment request (itms21_zop.id).",
+        "vydavky_id": "Id of the parent expenditure item (itms21_zop_vydavky.id).",
+        "druhneziadanejsumy_id": "Id of the type of non-claimed amount.",
+        "druhneziadanejsumy_kod": "Code of the type of non-claimed amount.",
+        "druhneziadanejsumy_kodzdroj": "Source code of the type of non-claimed amount.",
+        "druhneziadanejsumy_nazovsk": "Name in Slovak of the type of non-claimed amount.",
+        "druhneziadanejsumy_popissk": "Description in Slovak of the type of non-claimed amount.",
+        "sumaneziadana": "Amount not claimed for reimbursement, in euro.",
+    },
+    _t("vydavky_verejneobstaravanie"): {
+        "zop_id": "Id of the parent payment request (itms21_zop.id).",
+        "vydavky_id": "Id of the parent expenditure item (itms21_zop_vydavky.id).",
+        "id": "Id of the public procurement procedure linked to this expenditure item.",
+    },
+    _t("vydavky_zmluvaverejneobstaravanie"): {
+        "zop_id": "Id of the parent payment request (itms21_zop.id).",
+        "vydavky_id": "Id of the parent expenditure item (itms21_zop_vydavky.id).",
+        "id": "Id of the public procurement contract linked to this expenditure item.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
 
 
 def ensure_full_schema(con: duckdb.DuckDBPyConnection) -> None:
@@ -275,7 +391,10 @@ def sync_zop() -> tuple[int, int, int]:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_full_schema(con)
+    apply_comments(con)
 
     print("Fetching zop list...")
     list_items = fetch_list()

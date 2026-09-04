@@ -29,7 +29,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p data
-          gh release download data-store --repo "$GITHUB_REPOSITORY" --pattern eurofondy.duckdb --dir data --clobber \
+          gh release download data-store --repo "$GITHUB_REPOSITORY" --pattern eufunds.duckdb --dir data --clobber \
             || echo "No existing release asset yet; starting with a fresh DuckDB file."
 
       - name: Run fetch scripts
@@ -54,8 +54,8 @@ jobs:
           gh release view data-store --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create data-store --repo "$GITHUB_REPOSITORY" \
                  --title "Data store (not a versioned release)" \
-                 --notes "Holds eurofondy.duckdb so the incremental fetch scripts can persist state between monthly runs. Not a code release — do not delete unless you want to force a full re-fetch."
-          gh release upload data-store data/eurofondy.duckdb --repo "$GITHUB_REPOSITORY" --clobber
+                 --notes "Holds eufunds.duckdb so the incremental fetch scripts can persist state between monthly runs. Not a code release — do not delete unless you want to force a full re-fetch."
+          gh release upload data-store data/eufunds.duckdb --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Commit and push updated data
         run: |

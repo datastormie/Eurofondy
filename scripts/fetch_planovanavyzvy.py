@@ -27,7 +27,8 @@ import requests
 LIST_URL = "https://api.itms21.sk/public/v1/planovanavyzva?limit=-1"
 DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/planovanavyzva/id/{id}"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate tables inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate tables inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_PLANOVANAVYZVA = f"{TABLE_PREFIX}PLANOVANAVYZVA".lower()
@@ -162,6 +163,125 @@ CHILD_TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
 }
 
 
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_PLANOVANAVYZVA: (
+        "One row per planned/forecast call for proposals ('planovana "
+        "vyzva'), published ahead of time on a programme's indicative call "
+        "schedule before the actual call is opened. Purely additive: once "
+        "an id is stored it is never re-fetched, updated, or deleted."
+    ),
+    _t("PLANOVANAVYZVA_DOKUMENT"): "Documents (e.g. draft call templates) attached to a planned call.",
+    _t("PLANOVANAVYZVA_EXTERNYZDROJ"): "External web links referenced by a planned call.",
+    _t("PLANOVANAVYZVA_KATEGORIAREGIONOV"): "Region categories a planned call applies to.",
+    _t("PLANOVANAVYZVA_MIESTOREALIZACIE"): "Eligible places of implementation for a planned call.",
+    _t("PLANOVANAVYZVA_OPATRENIE"): "Measures a planned call is planned to be issued under.",
+    _t("PLANOVANAVYZVA_PROJEKTOVYZAMERIUS"): "Project intentions ('projektovy zamer IUS') linked to a planned call.",
+    _t("PLANOVANAVYZVA_SPECIFICKYCIELPROGRAMU"): "Specific objectives a planned call is planned to contribute to.",
+    _t("PLANOVANAVYZVA_TYPAKCIEPROGRAMU"): "Programme action types expected to be eligible under a planned call.",
+    _t("PLANOVANAVYZVA_ZIADATEL"): "Eligible applicant types/categories for a planned call.",
+    _t("PLANOVANAVYZVA_VYZVA"): "Actual call(s) for proposals ('vyzva') opened from this planned call, once published.",
+}
+for _child_table in CHILD_TABLES:
+    TABLE_COMMENTS[_t(_child_table)] += (
+        " Child rows carrying planovanavyzva_id back to itms21_planovanavyzva; "
+        "inserted once when the parent detail is first fetched, never updated/deleted."
+    )
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_PLANOVANAVYZVA: {
+        "id": "ITMS21 numeric id of the planned call.",
+        "href": "API URL of this planned call's own detail resource.",
+        "kod": "Planned call code.",
+        "nazovsk": "Planned call name in Slovak.",
+        "nazoven": "Planned call name in English.",
+        "nazovde": "Planned call name in German.",
+        "programskratka": "Abbreviation of the parent programme.",
+        "programoveobdobie": "Programming period the planned call belongs to (e.g. '2021-2027').",
+        "mrk": "Marginalized Roma community ('marginalizovana romska komunita', MRK) indicator/code for the planned call, when it targets this focus area.",
+        "schema": "Whether the call operates under a (state aid) scheme.",
+        "dvekola": "Whether the call is planned to run in two rounds ('dve kola').",
+        "typ": "Type of the planned call.",
+        "typ1kolo": "Type of the first round, when the call has two rounds.",
+        "typ2kolo": "Type of the second round, when the call has two rounds.",
+        "druh": "Kind/category of the planned call.",
+        "zameranieprojektu": "Project focus/orientation targeted by the call.",
+        "vyhlasena": "Whether the call has already been formally announced/opened (linked via itms21_planovanavyzva_vyzva).",
+        "zrusena": "Whether the planned call has been cancelled.",
+        "obsahujemiestorealizaciezahranicie": "Whether the call allows a place of implementation abroad.",
+        "sumaeu": "Planned EU-fund allocation for the call, in euro.",
+        "sumasr": "Planned Slovak national co-financing allocation for the call, in euro.",
+        "datumvyhlasenia1kolo": "Planned announcement date of the first round (epoch milliseconds).",
+        "datumvyhlasenia2kolo": "Planned announcement date of the second round (epoch milliseconds).",
+        "datumuzavretia1kolo": "Planned closing date of the first round (epoch milliseconds).",
+        "datumuzavretia2kolo": "Planned closing date of the second round (epoch milliseconds).",
+        "trvanie1kolo": "Planned duration of the first round, in days.",
+        "trvanie2kolo": "Planned duration of the second round, in days.",
+        "poskytovatel_id": "Id of the provider/managing body responsible for the call.",
+        "program_id": "Id of the parent programme this planned call belongs to.",
+        "vyhlasovatel_id": "Id of the entity expected to announce the call.",
+        "createdat": "Record creation timestamp in the source system.",
+        "updatedat": "Record last-updated timestamp in the source system.",
+    },
+    _t("PLANOVANAVYZVA_DOKUMENT"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "nazov": "Document name.",
+        "uuid": "Document's file identifier (uuid), used to build its download URL.",
+    },
+    _t("PLANOVANAVYZVA_EXTERNYZDROJ"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "nazov": "External source name.",
+        "url": "External source URL.",
+    },
+    _t("PLANOVANAVYZVA_KATEGORIAREGIONOV"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "id": "Id of the region category this planned call applies to.",
+    },
+    _t("PLANOVANAVYZVA_MIESTOREALIZACIE"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "id": "Id of the eligible place of implementation.",
+    },
+    _t("PLANOVANAVYZVA_OPATRENIE"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "id": "Id of the measure this planned call is planned to be issued under (itms21_program_opatrenie.id).",
+    },
+    _t("PLANOVANAVYZVA_PROJEKTOVYZAMERIUS"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "id": "Id of the linked project intention ('projektovy zamer IUS').",
+    },
+    _t("PLANOVANAVYZVA_SPECIFICKYCIELPROGRAMU"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "id": "Id of the specific objective this planned call is planned to contribute to (itms21_program_specifickycielprogramu.id).",
+    },
+    _t("PLANOVANAVYZVA_TYPAKCIEPROGRAMU"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "id": "Id of the eligible programme action type (itms21_program_typakcieprogramu.id).",
+    },
+    _t("PLANOVANAVYZVA_ZIADATEL"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "id": "Id of the eligible applicant type/category.",
+    },
+    _t("PLANOVANAVYZVA_VYZVA"): {
+        "planovanavyzva_id": "Id of the parent planned call (itms21_planovanavyzva.id).",
+        "id": "Id of the actual call for proposals opened from this planned call (itms21_vyzva.id).",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
 def migrate_table_prefix(con: duckdb.DuckDBPyConnection) -> None:
     """One-time rename of pre-"itms21_"-prefix tables (and their ALL-CAPS
     columns) from earlier runs; every step is idempotent/case-insensitive,
@@ -251,7 +371,10 @@ def sync_planovanavyzvy() -> tuple[int, int, int]:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_full_schema(con)
+    apply_comments(con)
 
     print("Fetching planovanavyzva list...")
     list_items = fetch_list()

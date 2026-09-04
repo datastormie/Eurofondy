@@ -9,7 +9,8 @@ A data pipeline + static dashboard for Slovak EU structural funds (ITMS21,
 
 - `scripts/fetch_*.py` — Python scripts that pull data from the public
   `api.itms21.sk` API into a single shared DuckDB file.
-- `data/eurofondy.duckdb` — the DuckDB store. **Not the source of truth in
+- `data/eufunds.duckdb` — the DuckDB store, with all tables living in the
+  `slovakia` schema (not the default `main`). **Not the source of truth in
   git**: the GitHub Actions workflow restores it from a GitHub Release asset
   (`gh release download data-store ...`) before each run and re-uploads it
   after, so the committed copy in the working tree can be stale. Don't assume
@@ -33,7 +34,7 @@ python scripts/fetch_ciselniky.py
 # ...etc — see .github/workflows/monthly.yml for the full, ordered list
 
 # Inspect the DuckDB store directly:
-python -c "import duckdb; print(duckdb.connect('data/eurofondy.duckdb').execute('SHOW TABLES').fetchall())"
+python -c "import duckdb; print(duckdb.connect('data/eufunds.duckdb').execute(\"SET schema='slovakia'\").execute('SHOW TABLES').fetchall())"
 
 # Serve docs/ locally to check the dashboard:
 python -m http.server --directory docs 8000
@@ -83,7 +84,7 @@ introducing one-off styling.
 
 ### Data flow
 
-`api.itms21.sk` → fetch script → `data/eurofondy.duckdb` → (for a few tables)
+`api.itms21.sk` → fetch script → `data/eufunds.duckdb` (`slovakia` schema) → (for a few tables)
 `export_to_json()` → `docs/*_data.json` → static page renders it client-side.
 Most fetched entities (vyzva, zonfp, ciselniky, aktivitaprojekt, etc.) are
 DuckDB-only with no website page — they exist so the data is queryable, not

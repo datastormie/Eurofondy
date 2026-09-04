@@ -25,7 +25,8 @@ import requests
 LIST_URL = "https://api.itms21.sk/public/v1/ciselniky"
 DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/ciselniky/{kod}"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate tables inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate tables inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_LIST = f"{TABLE_PREFIX}CISELNIK".lower()
@@ -121,6 +122,59 @@ def ensure_tables(con: duckdb.DuckDBPyConnection) -> None:
     """)
 
 
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_LIST: (
+        "One row per reference code list ('ciselnik') category, e.g. the "
+        "list of country codes or region categories. Existing kods are fully "
+        "rewritten with the latest API data on every sync; nothing is ever "
+        "deleted."
+    ),
+    TABLE_DETAIL: (
+        "Individual items (enumerated values) within each code list, keyed "
+        "on (ciselnik_kod, id). Purely additive: once an item is stored it "
+        "is never re-fetched, updated, or deleted, even if it disappears "
+        "from a later API response."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_LIST: {
+        "kod": "Unique code identifying this code list (e.g. 'KRAJ', 'MENA'); referenced by itms21_ciselniky_detail.ciselnik_kod.",
+        "nazov": "Name of the code list.",
+        "popis": "Description of the code list.",
+    },
+    TABLE_DETAIL: {
+        "ciselnik_kod": "Code of the parent code list this item belongs to (itms21_ciselnik.kod).",
+        "id": "Numeric id of the item within its code list.",
+        "kod": "Code value of the item.",
+        "kodzdroj": "Source code of the item, in the originating external register (when applicable).",
+        "nazovsk": "Item name in Slovak.",
+        "nazoven": "Item name in English.",
+        "nazovde": "Item name in German.",
+        "popissk": "Item description in Slovak.",
+        "popisen": "Item description in English.",
+        "popisde": "Item description in German.",
+        "platnostod": "Start of the item's validity period (epoch milliseconds).",
+        "platnostdo": "End of the item's validity period (epoch milliseconds), if the item has been retired.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
 def upsert_ciselnik(con: duckdb.DuckDBPyConnection, item: dict) -> None:
     con.execute(f"""
         INSERT INTO {TABLE_LIST} (kod, nazov, popis) VALUES (?, ?, ?)
@@ -167,7 +221,10 @@ def sync_ciselniky() -> tuple[int, int, int]:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_tables(con)
+    apply_comments(con)
 
     print("Fetching ciselniky list...")
     ciselniky = fetch_list()

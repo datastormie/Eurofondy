@@ -22,7 +22,8 @@ import requests
 
 API_URL = "https://api.itms21.sk/public/v1/priorita"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate table inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate table inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_PRIORITA = f"{TABLE_PREFIX}program_priorita"
@@ -67,6 +68,46 @@ PRIORITA_COLUMNS: list[tuple[str, str, str]] = [
 ]
 
 
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_PRIORITA: (
+        "One row per programme priority axis ('priorita'), a top-level "
+        "structural division of an Operational Programme under which "
+        "specific objectives and measures are grouped. Existing rows are "
+        "fully rewritten with the latest API data on every sync; nothing is "
+        "ever deleted."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_PRIORITA: {
+        "id": "ITMS21 numeric id of the priority axis.",
+        "href": "API URL of this priority axis's own detail resource.",
+        "kod": "Priority axis code.",
+        "nazovsk": "Priority axis name in Slovak.",
+        "nazoven": "Priority axis name in English.",
+        "nazovde": "Priority axis name in German.",
+        "program_id": "Id of the parent programme this priority axis belongs to (itms21_programs_current.program_id).",
+        "createdat": "Record creation timestamp in the source system.",
+        "updatedat": "Record last-updated timestamp in the source system.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
 def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
     cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in PRIORITA_COLUMNS)
     con.execute(f"""
@@ -97,7 +138,10 @@ def sync_priorita() -> int:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_table(con)
+    apply_comments(con)
 
     print("Fetching priorita list...")
     items = fetch_priorita()

@@ -26,7 +26,8 @@ import requests
 LIST_URL = "https://api.itms21.sk/public/v1/vyzva?limit=-1"
 DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/vyzva/id/{id}"
 
-DB_PATH = Path("data/eurofondy.duckdb")  # shared DuckDB file, separate tables inside
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate tables inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
 
 TABLE_PREFIX = "itms21_"
 TABLE_VYZVA = f"{TABLE_PREFIX}VYZVA".lower()
@@ -306,6 +307,374 @@ CHILD_TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
 }
 
 
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_VYZVA: (
+        "One row per call for proposals ('vyzva'), the mechanism through "
+        "which a programme's measures are opened for grant applications "
+        "('zonfp'). Purely additive: once an id is stored it is never "
+        "re-fetched, updated, or deleted."
+    ),
+    _t("VYZVA_AKTUALITANAVYZVE"): "News/update items published on the call ('aktualita na vyzve').",
+    _t("VYZVA_CIELOVASKUPINA"): "Eligible target groups for the call.",
+    _t("VYZVA_DALSIAFORMALNANALEZITOST"): "Additional formal requirements applicants must meet under the call.",
+    _t("VYZVA_DALSIASKUTOCNOST"): "Additional facts/notices published about the call.",
+    _t("VYZVA_DOKUMENT"): "Documents (e.g. call text, annexes) attached to the call.",
+    _t("VYZVA_EXTERNYZDROJ"): "External web links referenced by the call.",
+    _t("VYZVA_FOND"): "EU fund(s) (e.g. ERDF, ESF+, Cohesion Fund) financing the call.",
+    _t("VYZVA_FORMAPODPORY"): "Forms of support (e.g. grant, refundable assistance) available under the call, by region category and specific objective.",
+    _t("VYZVA_HOSPODARSKACINNOST"): "Eligible economic activities (NACE-style classification) under the call, by region category and specific objective.",
+    _t("VYZVA_KATEGORIAREGIONOV"): "Region categories the call applies to.",
+    _t("VYZVA_KONTAKTNAOSOBA"): "Contact persons published for applicant queries about the call.",
+    _t("VYZVA_MAKROREGIONALNASTRATEGIAASTRATEGIAPREMORSKEOBLASTI"): (
+        "Macro-regional strategies and sea-basin strategies (e.g. EUSDR) the call contributes to, by region category and specific objective."
+    ),
+    _t("VYZVA_MIESTOREALIZACIE"): "Eligible places of implementation for the call.",
+    _t("VYZVA_MIESTOREALIZACIEFULL"): "Eligible places of implementation for the call (detailed/full location entries).",
+    _t("VYZVA_MIESTOREALIZACIESTAT"): "Eligible countries of implementation for the call.",
+    _t("VYZVA_OBLASTINTERVENCIE"): "Intervention fields (EU classification dimension) the call targets, by region category and specific objective.",
+    _t("VYZVA_OPATRENIE"): "Measure(s) the call is issued under.",
+    _t("VYZVA_OPRAVNENEVYDAVKY"): "Categories of eligible expenditure under the call, by programme action type.",
+    _t("VYZVA_PARTNER"): "Eligible project-partner types for the call.",
+    _t("VYZVA_PLANOVANAVYZVA"): "Planned call(s) this call for proposals originated from.",
+    _t("VYZVA_PODMIENKAPOSKYTNUTIAPRISPEVKU"): "Conditions for granting the contribution (eligibility conditions) applicants must satisfy under the call.",
+    _t("VYZVA_POSUDZOVANEOBDOBIE"): "Assessment periods (evaluation rounds) defined for the call, with their submission deadlines.",
+    _t("VYZVA_PROJEKTOVYZAMERIUS"): "Project intentions ('projektovy zamer IUS') linked to the call.",
+    _t("VYZVA_RODOVAROVNOST"): "Gender-equality classifications tagged on the call, by region category and specific objective.",
+    _t("VYZVA_SEKUNDARNYTEMATICKYOKRUH"): "Secondary thematic focus areas tagged on the call, by region category and specific objective.",
+    _t("VYZVA_SPECIFICKYCIELPROGRAMU"): "Specific objective(s) the call contributes to.",
+    _t("VYZVA_STATNAPOMOC"): "State aid scheme(s) the call operates under.",
+    _t("VYZVA_SUBJEKT"): "Entities/institutions related to the call (e.g. co-awarding bodies).",
+    _t("VYZVA_TYPAKCIE"): "Types of action eligible under the call, by region category and specific objective.",
+    _t("VYZVA_TYPAKCIEPROGRAMU"): "Programme action type(s) eligible under the call.",
+    _t("VYZVA_TYPINTERVENCIE"): "Types of intervention eligible under the call, by region category and specific objective.",
+    _t("VYZVA_UKAZOVATELVYSLEDKOVY"): "Result indicators the call must report against, by region category and specific objective.",
+    _t("VYZVA_UKAZOVATELVYSTUPOVY"): "Output indicators the call must report against, by region category and specific objective.",
+    _t("VYZVA_URCITATEMA"): "Specific thematic tags on the call, by region category and specific objective.",
+    _t("VYZVA_UZEMNYMECHANIZMUSAZAMERANIE"): "Territorial mechanisms and focus (e.g. ITI, CLLD) the call uses, by region category and specific objective.",
+    _t("VYZVA_VERZIA"): "Published versions of the call (e.g. after an amendment).",
+    _t("VYZVA_VYKONAVANIE"): "Implementation modes tagged on the call, by region category and specific objective.",
+    _t("VYZVA_ZIADATEL"): "Eligible applicant types for the call.",
+    _t("VYZVA_SPOSOBFINANCOVANIA"): (
+        "Financing methods (e.g. grant, refundable form of assistance) applicable to the call. "
+        "Child rows carrying vyzva_id back to itms21_vyzva; inserted once when the parent detail is first fetched, never updated/deleted."
+    ),
+    _t("VYZVA_AKTUALITANAVYZVE_DOKUMENT"): (
+        "Documents attached to a news/update item published on the call. Grandchild rows carrying only "
+        "vyzva_id (not the specific update item's id, which the API doesn't expose) back to itms21_vyzva; "
+        "inserted once when the parent detail is first fetched, never updated/deleted."
+    ),
+    _t("VYZVA_PODMIENKAPOSKYTNUTIAPRISPEVKU_PRILOHA"): (
+        "Attachments required by a condition for granting the contribution. Grandchild rows carrying only "
+        "vyzva_id (not the specific condition's id, which the API doesn't expose) back to itms21_vyzva; "
+        "inserted once when the parent detail is first fetched, never updated/deleted."
+    ),
+}
+for _child_table in CHILD_TABLES:
+    TABLE_COMMENTS[_t(_child_table)] += (
+        " Child rows carrying vyzva_id back to itms21_vyzva; inserted once "
+        "when the parent detail is first fetched, never updated/deleted."
+    )
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_VYZVA: {
+        "id": "ITMS21 numeric id of the call for proposals.",
+        "href": "API URL of this call's own detail resource.",
+        "kod": "Call code.",
+        "nazovsk": "Call name in Slovak.",
+        "nazoven": "Call name in English.",
+        "nazovde": "Call name in German.",
+        "druh": "Kind/category of the call.",
+        "typ": "Type of the call.",
+        "mrk": "Marginalized Roma community ('marginalizovana romska komunita', MRK) indicator/code for the call, when it targets this focus area.",
+        "zameranieprojektu": "Project focus/orientation targeted by the call.",
+        "cielvyzvy": "Stated goal/objective of the call.",
+        "doplnujuceinformacie": "Additional free-text information published about the call.",
+        "dovodvznikuverzie": "Reason this version of the call record was created (e.g. amendment reason).",
+        "inaskutocnostuzatvorenievyzvy": "Other stated fact/reason for closing the call.",
+        "datumvyhlasenia": "Date the call was announced (epoch milliseconds).",
+        "datumukoncenia": "Date the call was closed (epoch milliseconds).",
+        "programoveobdobie": "Programming period the call belongs to (e.g. '2021-2027').",
+        "sposobpodaniazonfp": "Method for submitting the grant application (ZoNFP) under this call.",
+        "miestoprepodaniezonfp": "Place designated for submitting the grant application under this call.",
+        "predpokladanalehotanarozhodnutie": "Expected time limit for a decision on submitted applications.",
+        "minvyska": "Minimum total project value eligible under the call.",
+        "maxvyska": "Maximum total project value eligible under the call.",
+        "minziadanavyskanfp": "Minimum requested grant amount (NFP) eligible under the call.",
+        "maxziadanavyskanfp": "Maximum requested grant amount (NFP) eligible under the call.",
+        "maxmiera": "Maximum co-financing rate allowed under the call.",
+        "mieraspolufinancovania": "Applicable co-financing rate for the call.",
+        "sumaeu": "Total EU-fund allocation for the call, in euro.",
+        "sumasr": "Total Slovak national co-financing allocation for the call, in euro.",
+        "pocetpredlozenychziadosti": "Number of applications submitted under the call.",
+        "pocetschvalenychziadosti": "Number of applications approved under the call.",
+        "pocetneschvalenychziadosti": "Number of applications rejected under the call.",
+        "pocetziadostivkonani": "Number of applications still under assessment.",
+        "pocetrealizovanychprojektov": "Number of projects implemented as a result of the call.",
+        "obsahujemiestorealizaciezahranicie": "Whether the call allows a place of implementation abroad.",
+        "percentozapolozku": "Whether budget item limits under the call are expressed as a percentage.",
+        "povinnostvo": "Whether public procurement is mandatory for applicants under the call.",
+        "pozastavenepredkladaniezonfp": "Whether submission of grant applications under the call is currently suspended.",
+        "predvyber": "Whether the call uses a pre-selection (short-listing) step before full assessment.",
+        "uzavreta": "Whether the call is closed.",
+        "vyhlasena": "Whether the call has been formally announced/opened.",
+        "zamerpredlozeny": "Whether a project intention had to be submitted before the full application.",
+        "zmenaazrusenievyzvy": "Description of a change to, or cancellation of, the call.",
+        "zrusena": "Whether the call has been cancelled.",
+        "kontaktemail": "Contact email published for applicant queries.",
+        "kontaktnazov": "Contact name/desk published for applicant queries.",
+        "kontakttelefon": "Contact phone number published for applicant queries.",
+        "kontaktneudajeposkytovatela": "Contact details of the provider/managing body.",
+        "poskytovatel_id": "Id of the provider/managing body responsible for the call.",
+        "program_id": "Id of the parent programme this call belongs to.",
+        "vyhlasovatel_id": "Id of the entity that announced the call.",
+        "createdat": "Record creation timestamp in the source system.",
+        "updatedat": "Record last-updated timestamp in the source system.",
+    },
+    _t("VYZVA_AKTUALITANAVYZVE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "datumzverejnenia": "Publication date of the news/update item (epoch milliseconds).",
+        "nazov": "Title of the news/update item.",
+        "text": "Body text of the news/update item.",
+    },
+    _t("VYZVA_CIELOVASKUPINA"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the eligible target group.",
+    },
+    _t("VYZVA_DALSIAFORMALNANALEZITOST"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "dalsiaformalnanalezitost": "Text of the additional formal requirement.",
+        "kod": "Code of the additional formal requirement.",
+    },
+    _t("VYZVA_DALSIASKUTOCNOST"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "dalsiaskutocnost": "Text of the additional fact/notice.",
+        "kod": "Code of the additional fact/notice.",
+    },
+    _t("VYZVA_DOKUMENT"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "nazov": "Document name.",
+        "uuid": "Document's file identifier (uuid), used to build its download URL.",
+    },
+    _t("VYZVA_EXTERNYZDROJ"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "nazov": "External source name.",
+        "url": "External source URL.",
+    },
+    _t("VYZVA_FOND"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the EU fund financing the call.",
+    },
+    _t("VYZVA_FORMAPODPORY"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "formapodpory_id": "Id of the form of support (e.g. grant, refundable assistance).",
+        "kategoriaregionov_id": "Id of the region category this form of support applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this form of support applies to.",
+    },
+    _t("VYZVA_HOSPODARSKACINNOST"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "hospodarskacinnost_id": "Id of the eligible economic activity (NACE-style classification).",
+        "kategoriaregionov_id": "Id of the region category this economic activity applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this economic activity applies to.",
+    },
+    _t("VYZVA_KATEGORIAREGIONOV"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the region category the call applies to.",
+    },
+    _t("VYZVA_KONTAKTNAOSOBA"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "email": "Contact person's email address.",
+        "osoba_meno": "Contact person's first name.",
+        "osoba_menouplne": "Contact person's full name.",
+        "osoba_priezvisko": "Contact person's surname.",
+        "osoba_titulpred": "Contact person's academic title placed before the name.",
+        "osoba_titulza": "Contact person's academic title placed after the name.",
+        "telefon": "Contact person's phone number.",
+    },
+    _t("VYZVA_MAKROREGIONALNASTRATEGIAASTRATEGIAPREMORSKEOBLASTI"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this strategy association applies to.",
+        "makroregionalnastrategiaastrategiapremorskeoblasti_id": "Id of the macro-regional strategy or sea-basin strategy (e.g. EUSDR).",
+        "specifickycielprogramu_id": "Id of the specific objective this strategy association applies to.",
+    },
+    _t("VYZVA_MIESTOREALIZACIE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the eligible place of implementation.",
+    },
+    _t("VYZVA_MIESTOREALIZACIEFULL"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the eligible place of implementation (detailed/full location entry).",
+    },
+    _t("VYZVA_MIESTOREALIZACIESTAT"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the eligible country of implementation.",
+    },
+    _t("VYZVA_OBLASTINTERVENCIE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this intervention field applies to.",
+        "oblastintervencie_id": "Id of the intervention field (EU classification dimension code).",
+        "specifickycielprogramu_id": "Id of the specific objective this intervention field applies to.",
+    },
+    _t("VYZVA_OPATRENIE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the measure this call is issued under (itms21_program_opatrenie.id).",
+    },
+    _t("VYZVA_OPRAVNENEVYDAVKY"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kod": "Code of the eligible expenditure category.",
+        "nazovde": "Eligible expenditure category name in German.",
+        "nazoven": "Eligible expenditure category name in English.",
+        "nazovsk": "Eligible expenditure category name in Slovak.",
+        "typakcieprogramu_id": "Id of the programme action type this eligible expenditure category applies to.",
+    },
+    _t("VYZVA_PARTNER"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the eligible project-partner type.",
+    },
+    _t("VYZVA_PLANOVANAVYZVA"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the planned call this call for proposals originated from (itms21_planovanavyzva.id).",
+    },
+    _t("VYZVA_PODMIENKAPOSKYTNUTIAPRISPEVKU"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "nazovde": "Condition name in German.",
+        "nazoven": "Condition name in English.",
+        "nazovsk": "Condition name in Slovak.",
+        "popisde": "Condition description in German.",
+        "popisen": "Condition description in English.",
+        "popissk": "Condition description in Slovak.",
+        "poradovecislo": "Ordering position of the condition within the call.",
+        "poznamka": "Free-text note on the condition.",
+    },
+    _t("VYZVA_POSUDZOVANEOBDOBIE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "datumuzavierky": "Submission deadline for this assessment period (epoch milliseconds).",
+        "poradovecislo": "Ordering position of this assessment period within the call.",
+    },
+    _t("VYZVA_PROJEKTOVYZAMERIUS"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the linked project intention ('projektovy zamer IUS').",
+    },
+    _t("VYZVA_RODOVAROVNOST"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this gender-equality tag applies to.",
+        "rodovarovnost_id": "Id of the gender-equality classification.",
+        "specifickycielprogramu_id": "Id of the specific objective this gender-equality tag applies to.",
+    },
+    _t("VYZVA_SEKUNDARNYTEMATICKYOKRUH"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this thematic focus applies to.",
+        "sekundarnytematickyokruh_id": "Id of the secondary thematic focus area.",
+        "specifickycielprogramu_id": "Id of the specific objective this thematic focus applies to.",
+    },
+    _t("VYZVA_SPECIFICKYCIELPROGRAMU"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the specific objective this call contributes to (itms21_program_specifickycielprogramu.id).",
+    },
+    _t("VYZVA_STATNAPOMOC"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kod": "State aid scheme code.",
+        "nazov": "State aid scheme name.",
+        "platnostdo": "End of the state aid scheme's validity period (epoch milliseconds).",
+        "platnostod": "Start of the state aid scheme's validity period (epoch milliseconds).",
+        "typ": "Type of the state aid scheme.",
+    },
+    _t("VYZVA_SUBJEKT"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the related entity/institution (e.g. a co-awarding body).",
+    },
+    _t("VYZVA_TYPAKCIE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this type of action applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this type of action applies to.",
+        "typakcie_id": "Id of the type of action.",
+    },
+    _t("VYZVA_TYPAKCIEPROGRAMU"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the eligible programme action type (itms21_program_typakcieprogramu.id).",
+    },
+    _t("VYZVA_TYPINTERVENCIE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this type of intervention applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this type of intervention applies to.",
+        "typintervencie_id": "Id of the type of intervention.",
+    },
+    _t("VYZVA_UKAZOVATELVYSLEDKOVY"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of this result-indicator association.",
+        "kategoriaregionov_id": "Id of the region category this result indicator applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this result indicator applies to.",
+        "ukazovatelprojektovy_id": "Id of the underlying project-level result indicator definition.",
+    },
+    _t("VYZVA_UKAZOVATELVYSTUPOVY"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of this output-indicator association.",
+        "kategoriaregionov_id": "Id of the region category this output indicator applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this output indicator applies to.",
+        "ukazovatelprojektovy_id": "Id of the underlying project-level output indicator definition.",
+    },
+    _t("VYZVA_URCITATEMA"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this thematic tag applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this thematic tag applies to.",
+        "urcitatema_id": "Id of the specific theme.",
+    },
+    _t("VYZVA_UZEMNYMECHANIZMUSAZAMERANIE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this territorial mechanism applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this territorial mechanism applies to.",
+        "uzemnymechanizmusazameranie_id": "Id of the territorial mechanism and focus (e.g. ITI, CLLD).",
+    },
+    _t("VYZVA_VERZIA"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of this published version of the call.",
+    },
+    _t("VYZVA_VYKONAVANIE"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "kategoriaregionov_id": "Id of the region category this implementation mode applies to.",
+        "specifickycielprogramu_id": "Id of the specific objective this implementation mode applies to.",
+        "vykonavanie_id": "Id of the implementation mode.",
+    },
+    _t("VYZVA_ZIADATEL"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "id": "Id of the eligible applicant type.",
+    },
+    _t("VYZVA_SPOSOBFINANCOVANIA"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "sposobfinancovania": "Financing method applicable to the call (e.g. grant, refundable form of assistance).",
+    },
+    _t("VYZVA_AKTUALITANAVYZVE_DOKUMENT"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "nazov": "Document name.",
+        "uuid": "Document's file identifier (uuid), used to build its download URL.",
+    },
+    _t("VYZVA_PODMIENKAPOSKYTNUTIAPRISPEVKU_PRILOHA"): {
+        "vyzva_id": "Id of the parent call (itms21_vyzva.id).",
+        "integracie": "Integration/system reference for the attachment.",
+        "nazovde": "Attachment name in German.",
+        "nazoven": "Attachment name in English.",
+        "nazovsk": "Attachment name in Slovak.",
+        "poradovecislo": "Ordering position of the attachment within its condition.",
+        "prilohapovinna": "Whether the attachment is mandatory.",
+        "sposobpredlozenia": "Method by which the attachment must be submitted.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
 def migrate_table_prefix(con: duckdb.DuckDBPyConnection) -> None:
     """One-time rename of pre-"itms21_"-prefix tables (and their ALL-CAPS
     columns) from earlier runs; every step is idempotent/case-insensitive,
@@ -483,7 +852,10 @@ def sync_vyzvy() -> tuple[int, int, int]:
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
     ensure_full_schema(con)
+    apply_comments(con)
 
     print("Fetching vyzva list...")
     list_items = fetch_list()
