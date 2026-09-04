@@ -39,6 +39,10 @@ jobs:
           python scripts/fetch_ciselniky.py
           python scripts/fetch_vyzvy.py
           python scripts/fetch_planovanavyzvy.py
+          python scripts/fetch_priorita.py
+          python scripts/fetch_specifickycielprogramu.py
+          python scripts/fetch_opatrenie.py
+          python scripts/fetch_typakcieprogramu.py
 
       - name: Save DuckDB store to release
         env:
