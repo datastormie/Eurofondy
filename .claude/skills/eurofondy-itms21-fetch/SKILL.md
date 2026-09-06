@@ -1,15 +1,20 @@
 ---
 name: eurofondy-itms21-fetch
-description: Conventions for writing or modifying a scripts/fetch_*.py script that pulls data from the ITMS21 public API (api.itms21.sk) into the `slovakia` schema of data/eufunds.duckdb. Use this whenever adding a new ITMS21 endpoint, adding a new field/child-table to an existing fetch script, debugging why a fetch script re-fetches or duplicates rows, or wiring a new script into .github/workflows/monthly.yml. Also use when the user mentions ITMS21, DuckDB sync scripts, or "fetch script" in this repo, even if they don't name a specific file.
+description: Conventions for writing or modifying a scripts/fetch_*.py script that pulls data from the ITMS21 public API (api.itms21.sk) into data/eufunds.duckdb (mostly the `slovakia` schema, with the two website-facing "current" tables in a separate `website` schema). Use this whenever adding a new ITMS21 endpoint, adding a new field/child-table to an existing fetch script, debugging why a fetch script re-fetches or duplicates rows, or wiring a new script into .github/workflows/monthly.yml. Also use when the user mentions ITMS21, DuckDB sync scripts, or "fetch script" in this repo, even if they don't name a specific file.
 ---
 
 # Eurofondy ITMS21 fetch scripts
 
 All `scripts/fetch_*.py` files pull from `https://api.itms21.sk/public/v1/...` into
-one shared DuckDB file, `data/eufunds.duckdb`, all tables living in the `slovakia`
-schema (each script sets `DB_SCHEMA = "slovakia"` and runs `CREATE SCHEMA IF NOT
-EXISTS` + `SET schema = ...` right after connecting — copy this on every new
-script too). They are run monthly by
+one shared DuckDB file, `data/eufunds.duckdb`. Almost all tables live in the
+`slovakia` schema (each script sets `DB_SCHEMA = "slovakia"` and runs `CREATE
+SCHEMA IF NOT EXISTS` + `SET schema = ...` right after connecting — copy this on
+every new script too). The two tables that back the live website
+(`itms21_programs_current` in `fetch_programs.py`, `itms21_projects_current` in
+`fetch_projects.py`) instead live in a dedicated `website` schema — each of
+those scripts also sets `WEBSITE_SCHEMA = "website"`, qualifies that one table
+as `website.<table>` everywhere it's referenced, and keeps every other table it
+owns in `slovakia`. They are run monthly by
 `.github/workflows/monthly.yml`, in a fixed order (roughly: programs → projects →
 ciselniky → vyzvy → planovanavyzvy → priorita → specifickycielprogramu → opatrenie
 → typakcieprogramu → zonfp → zop → aktivitaprojekt). Every script is independent

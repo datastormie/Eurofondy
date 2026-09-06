@@ -9,9 +9,11 @@ A data pipeline + static dashboard for Slovak EU structural funds (ITMS21,
 
 - `scripts/fetch_*.py` — Python scripts that pull data from the public
   `api.itms21.sk` API into a single shared DuckDB file.
-- `data/eufunds.duckdb` — the DuckDB store, with all tables living in the
-  `slovakia` schema (not the default `main`). **Not the source of truth in
-  git**: the GitHub Actions workflow restores it from a GitHub Release asset
+- `data/eufunds.duckdb` — the DuckDB store. Almost all tables live in the
+  `slovakia` schema (not the default `main`); the two tables that back the
+  live website (`itms21_programs_current`, `itms21_projects_current`) live in
+  a separate `website` schema instead. **Not the source of truth in git**: the
+  GitHub Actions workflow restores it from a GitHub Release asset
   (`gh release download data-store ...`) before each run and re-uploads it
   after, so the committed copy in the working tree can be stale. Don't assume
   the local file reflects the latest fetched data.
