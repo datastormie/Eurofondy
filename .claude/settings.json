@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "This turn just finished. First, cheaply determine whether any file matching docs/**/*.html, docs/**/*.css, or docs/**/*.js has uncommitted changes (e.g. run `git status --porcelain -- docs` if you have shell access, or Glob those patterns and check whether the most recently modified file's timestamp is recent). If none do, respond with exactly \"Not applicable.\" and do nothing else - do not read or grep any files in that case. Otherwise, verify Montserrat remains the single typeface used consistently across ALL such files under docs/ (not only the ones that just changed), per this project's brand system: (1) every HTML page under docs/ that renders visible text loads Montserrat via the same Google Fonts <link> pattern used in docs/index.html; (2) docs/styles.css defines --font-display and --font-body as 'Montserrat', Arial, Helvetica, sans-serif; (3) every font-family declaration in styles.css or inline <style> blocks uses var(--font-display)/var(--font-body) or that exact stack (font-family: inherit is fine); (4) any Chart.js page sets Chart.defaults.font.family to that same stack; (5) only font weights 400/500/600/700 are used. Report violations found (file, line, the offending declaration, why it breaks consistency), or state explicitly that everything is consistent.",
+            "timeout": 90,
+            "statusMessage": "Checking Montserrat font consistency (docs/ changed this turn)..."
+          }
+        ]
+      }
+    ]
+  }
+}
