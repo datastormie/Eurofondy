@@ -36,6 +36,7 @@ jobs:
         run: |
           python scripts/fetch_programs.py
           python scripts/fetch_projects.py
+          python scripts/fetch_intenzitaprojekt.py
           python scripts/fetch_ciselniky.py
           python scripts/fetch_vyzvy.py
           python scripts/fetch_planovanavyzvy.py
@@ -46,6 +47,8 @@ jobs:
           python scripts/fetch_zonfp.py
           python scripts/fetch_zop.py
           python scripts/fetch_aktivitaprojekt.py
+          python scripts/fetch_ukazovatelprojektovy.py
+          python scripts/fetch_uctovnydoklad.py
 
       - name: Save DuckDB store to release
         env:
