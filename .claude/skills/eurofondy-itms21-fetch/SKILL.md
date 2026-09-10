@@ -20,10 +20,26 @@ ciselniky → vyzvy → planovanavyzvy → priorita → specifickycielprogramu �
 → typakcieprogramu → zonfp → zop → aktivitaprojekt). Every script is independent
 and idempotent — re-running it must never duplicate or corrupt data.
 
-Before writing a new script, decide which of the four archetypes below fits the
+Before writing a new script, decide which of the five archetypes below fits the
 API endpoint, then reuse the shared building blocks that every script already
 relies on. Don't invent a new sync strategy — consistency across scripts is what
 keeps this maintainable by future-you.
+
+**Before committing to archetype #2/#3 (i.e. any script that plans a separate
+`/id/{id}` detail call), quickly check two things with a one-off `curl`:**
+whether the `/id/{id}` endpoint actually reaches the origin, and whether the
+list endpoint's `?limit=-1` response already embeds full nested detail per
+record (open one record and look for nested objects/arrays beyond just
+`id`/`kod`/`nazov`, not just bare refs). If the detail endpoint returns a
+body like `{"supportID": "..."}` with none of the normal app response headers
+(`Content-Security-Policy`, `Cross-Origin-Embedder-Policy`, an `imsIngressApi`
+cookie — present on every real response including ordinary 404s) that's an
+F5 ASM/BIG-IP WAF block page, not an app-level error, and retrying harder
+won't help. As of writing, the detail endpoints for `projektovyzamerius`,
+`strategiaius`, `zmluvyverejnehoobstaravania`, and `polozkarozpocetprojekt`
+are WAF-blocked for at least some clients/IPs — don't assume a 403 there is a
+script bug. If the list response already has everything, use archetype #5
+instead of fighting the block.
 
 ## Pick the archetype
 
@@ -58,6 +74,38 @@ keeps this maintainable by future-you.
    Categories are upserted (full overwrite per category); items within a
    category are additive, keyed on `(category_kod, item_id)`.
 
+5. **Incremental additive, list-embedded detail (no detail call)** — the list
+   endpoint's `?limit=-1` response already embeds each record's full nested
+   detail inline (single-object refs *and* one-to-many list refs), so there
+   is no separate `/id/{id}` call at all — one list request replaces both
+   the list-for-ids step and the per-id detail step used in #2/#3.
+   Examples: `fetch_projektovyzamerius.py`, `fetch_strategiaius.py` (both
+   adopted this after their `/id/{id}` detail endpoints turned out to be
+   WAF-blocked — see the check above — but the pattern applies any time the
+   list response is already rich enough, WAF or not).
+   Same normalization rule as #3 (single-object fields → flat `<name>_id`
+   columns on the parent; one-to-many list fields → child tables carrying
+   `<entity>_id`), same insert-once gating via `get_known_ids()`, just
+   sourced from `fetch_list()`'s records directly instead of a per-id
+   `fetch_detail()`. Because there's no per-id network call, these scripts
+   skip `ThreadPoolExecutor`/`MAX_WORKERS`/`REQUEST_TIMEOUT` entirely — only
+   `RETRY_ATTEMPTS`/`RETRY_BACKOFF_SECONDS`/`LIST_REQUEST_TIMEOUT` apply — and
+   `main()`'s summary drops the "failed" count (a single list call either
+   succeeds or raises; print `"Done. {total} total in list, {stored} newly
+   stored."` instead). Child tables here only need to carry the bare `id`
+   (and `href` if present) of the referenced record — the referenced
+   entity's own detail lives in *its* fetch script's table, so don't
+   duplicate the nested payload.
+   **Sanity-check cardinality before picking flat-column vs. child-table**:
+   a field that looks like a single nested object in one sample record can
+   still be an array in the raw JSON (e.g. `"vyzva": [...]` with one item)
+   — `_get()` silently returns `None` for a list instead of raising, so a
+   wrong assumption here fails quietly (every value in that column is
+   `NULL`) rather than with an error. Pull a handful of real records
+   (`curl ".../entity?limit=20"`) and check `isinstance(value, list)`
+   for every nested field before writing the column mapping, don't infer
+   the shape from a single example.
+
 Only archetypes #1 and #3-with-a-flat-summary-row (`fetch_projects.py` is
 actually #1 + #3 combined — a `projects_current` summary table for the website,
 *and* the full normalized schema for DuckDB querying) produce a
@@ -70,11 +118,16 @@ don't add a JSON export or website page unless the user asks for one.
   a loop of `RETRY_ATTEMPTS = 3` with `time.sleep(RETRY_BACKOFF_SECONDS * attempt)`
   backoff (`RETRY_BACKOFF_SECONDS = 2`). List-endpoint calls use a longer
   `LIST_REQUEST_TIMEOUT = 180` (the `limit=-1` list response can be large);
-  detail calls use `REQUEST_TIMEOUT = 30`.
-- **Concurrency**: detail fetches run through
+  detail calls use `REQUEST_TIMEOUT = 30`. Archetype #5 scripts have no
+  detail call, so they only define `RETRY_ATTEMPTS`/`RETRY_BACKOFF_SECONDS`/
+  `LIST_REQUEST_TIMEOUT` — don't add `REQUEST_TIMEOUT` for a call that
+  doesn't exist.
+- **Concurrency**: detail fetches (archetypes #2/#3) run through
   `ThreadPoolExecutor(max_workers=MAX_WORKERS)` with `MAX_WORKERS = 8` — keep it
   at 8 unless there's a reason to change it; it's a deliberate cap to avoid
-  hammering the API.
+  hammering the API. Archetype #5 scripts have nothing to parallelize (one
+  list call, then in-memory decomposition) and correctly have no
+  `ThreadPoolExecutor`/`MAX_WORKERS` at all.
 - **Dotted-path getter**: every script defines the same `_get(d, "a.b.c")`
   helper to walk nested dicts safely (returns `None` on any missing/None
   segment). Copy it verbatim.
@@ -107,8 +160,10 @@ don't add a JSON export or website page unless the user asks for one.
   `pd.to_datetime(df[col], unit="ms", errors="coerce")`, and writes
   `{"generated_at": ..., "<entity>s": [...]}"` to `docs/<entity>_data.json`.
 - **`main()`** always does the sync, prints a one-line summary
-  (`"Done. {total} total in list, {fetched} newly fetched, {failed} failed."`),
-  then calls `export_to_json()` if applicable.
+  (`"Done. {total} total in list, {fetched} newly fetched, {failed} failed."`
+  for archetypes #1-#4; archetype #5 has no per-id failure mode, so it prints
+  `"Done. {total} total in list, {stored} newly stored."` instead), then
+  calls `export_to_json()` if applicable.
 - **Table/column documentation**: every table and column carries an English
   `COMMENT ON` description, stored in-database (queryable via
   `duckdb_tables()` / `duckdb_columns()`), not in a separate doc file. Each

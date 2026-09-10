@@ -50,11 +50,13 @@ No linter, formatter, or test runner is configured. There's nothing to build.
 
 Every script talks to one ITMS21 endpoint and follows one of a small number of
 established sync patterns (full-overwrite, incremental-additive flat table,
-incremental-additive normalized/decomposed schema, or two-tier code list),
-sharing the same retry/backoff, `ThreadPoolExecutor(max_workers=8)`
-concurrency, dotted-path JSON getters, and `itms21_`-prefixed lowercase table
-naming. **Use the `eurofondy-itms21-fetch` skill** before writing or modifying
-any fetch script — it documents which pattern to use and the exact
+incremental-additive normalized/decomposed schema, two-tier code list, or
+incremental-additive with the detail already embedded in the list response so
+there's no separate per-id call), sharing the same retry/backoff, dotted-path
+JSON getters, and `itms21_`-prefixed lowercase table naming (scripts that do
+make per-id detail calls also share `ThreadPoolExecutor(max_workers=8)`
+concurrency). **Use the `eurofondy-itms21-fetch` skill** before writing or
+modifying any fetch script — it documents which pattern to use and the exact
 conventions to reuse rather than reinvent.
 
 Key invariant across almost every script: once a row's primary key is known to

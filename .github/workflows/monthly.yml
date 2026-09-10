@@ -42,10 +42,12 @@ jobs:
           python scripts/fetch_planovanavyzvy.py
           python scripts/fetch_priorita.py
           python scripts/fetch_specifickycielprogramu.py
+          python scripts/fetch_strategiaius.py
           python scripts/fetch_opatrenie.py
           python scripts/fetch_typakcieprogramu.py
           python scripts/fetch_zonfp.py
           python scripts/fetch_zop.py
+          python scripts/fetch_projektovyzamerius.py
           python scripts/fetch_polozkarozpocetprojekt.py
           python scripts/fetch_aktivitaprojekt.py
           python scripts/fetch_ukazovatelprojektovy.py
