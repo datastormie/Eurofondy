@@ -38,6 +38,8 @@ jobs:
           python scripts/fetch_projects.py
           python scripts/fetch_intenzitaprojekt.py
           python scripts/fetch_ciselniky.py
+          python scripts/fetch_subjekt.py
+          python scripts/fetch_organimplementaciefondov.py
           python scripts/fetch_vyzvy.py
           python scripts/fetch_planovanavyzvy.py
           python scripts/fetch_priorita.py
