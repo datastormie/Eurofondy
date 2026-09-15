@@ -58,6 +58,7 @@ jobs:
           python scripts/fetch_uctovnydoklad.py
           python scripts/fetch_verejneobstaravanie.py
           python scripts/fetch_zmluvyverejnehoobstaravania.py
+          python scripts/fetch_dodavatelobstaravatel.py
 
       - name: Save DuckDB store to release
         env:
