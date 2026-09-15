@@ -41,7 +41,9 @@ jobs:
           python scripts/fetch_vyzvy.py
           python scripts/fetch_planovanavyzvy.py
           python scripts/fetch_priorita.py
+          python scripts/fetch_financnyplanpriority.py
           python scripts/fetch_specifickycielprogramu.py
+          python scripts/fetch_financnyplanciele.py
           python scripts/fetch_strategiaius.py
           python scripts/fetch_opatrenie.py
           python scripts/fetch_typakcieprogramu.py

@@ -1,0 +1,382 @@
+"""
+Fetches the ITMS21 "financnyplanpriority" (priority axis financial plan)
+records and syncs them into two DuckDB tables: itms21_financnyplanpriority
+(one row per fund financed under a priority axis) and its child
+itms21_financnyplanpriority_clenenie (the plan broken down further, e.g. by
+region category or by a "delenieFP" sub-split).
+
+Unlike every other endpoint in this repo, there is no standalone list/detail
+call for this entity - the API only supports filtering by a parent id
+(prioritaId), so this script reads its set of ids to iterate from
+slovakia.itms21_program_priorita (populated by fetch_priorita.py), then calls
+the list endpoint once per priorita id with limit=-1. That per-priorita
+response already embeds full nested detail (including the
+financnyPlanPriorityClenenie child rows), so there is no separate per-id
+detail call - same "list response is already rich enough" shape as
+fetch_projektovyzamerius.py, just parametrized by a foreign id instead of
+returning everything in one shot.
+
+Hard dependency: fetch_priorita.py must have already run at least once against
+this DuckDB file, since itms21_program_priorita is this script's only source
+of priorita ids. If that table doesn't exist yet, this script raises
+immediately instead of silently doing nothing.
+
+Unlike the archetype-#2/#3 "gate on the id we're about to fetch" pattern, this
+script cannot gate network calls on the priorita id itself: DuckDB commits
+each statement as it executes (there is no held-open transaction for
+con.commit() to flush - verified this empirically, an uncommitted INSERT still
+survives a hard process kill), so if a priorita's several
+financnyplanpriority rows were inserted one at a time and the process died
+partway through, marking that whole priorita as "done" the moment any one row
+existed would silently and permanently drop the rest. So instead this follows
+fetch_ciselniky.py's approach for the same one-parent-many-children shape:
+every priorita id is queried again on every run (cheap - there are only a few
+dozen), and rows are de-duplicated on insert at the finest available
+grain - itms21_financnyplanpriority by its own id (get_known_ids, plus an
+ON CONFLICT (id) DO NOTHING backstop), itms21_financnyplanpriority_clenenie by
+the (financnyplanpriority_id, id) pair (get_known_clenenie_pairs) since it has
+no primary key of its own. That makes a partial/interrupted run harmless: a
+re-run simply inserts whatever didn't make it in last time and skips the rest.
+
+DuckDB-only: there is no JSON export / website page for this data.
+
+Run monthly via GitHub Actions (.github/workflows/monthly.yml), right after
+fetch_priorita.py.
+"""
+
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+import duckdb
+import requests
+
+LIST_URL = "https://api.itms21.sk/public/v1/financnyplanpriority"
+
+DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate tables inside
+DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
+
+# Table names (no "program_" infix, unlike itms21_program_priorita) match the
+# DWH attribute mapping supplied for this endpoint - not an accidental
+# divergence from fetch_financnyplanciele.py's itms21_program_financneciele
+# naming, which follows its own supplied mapping instead.
+TABLE_PREFIX = "itms21_"
+TABLE_FINANCNYPLANPRIORITY = f"{TABLE_PREFIX}financnyplanpriority"
+TABLE_FINANCNYPLANPRIORITY_CLENENIE = f"{TABLE_PREFIX}financnyplanpriority_clenenie"
+SOURCE_TABLE_PRIORITA = f"{TABLE_PREFIX}program_priorita"
+
+MAX_WORKERS = 8
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 2
+REQUEST_TIMEOUT = 30
+
+
+def fetch_for_priorita(priorita_id: int) -> list[dict] | None:
+    """Call the list endpoint filtered to one priorita id (limit=-1), with
+    basic retry on failure. Returns None (never an empty list vs. failure
+    ambiguity) only when every attempt raises."""
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            resp = requests.get(
+                LIST_URL, params={"limit": -1, "prioritaId": priorita_id}, timeout=REQUEST_TIMEOUT
+            )
+            resp.raise_for_status()
+            return resp.json()["results"]
+        except requests.RequestException as e:
+            if attempt == RETRY_ATTEMPTS:
+                print(f"  FAILED prioritaId={priorita_id} after {RETRY_ATTEMPTS} attempts: {e}")
+                return None
+            time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+    return None
+
+
+def _get(d: dict | None, path: str):
+    """Walk a dotted path through nested dicts; None if any segment is missing/None."""
+    cur = d
+    for part in path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+    return cur
+
+
+# Mirrors the ITMS21 "financnyplanpriority" list endpoint field-by-field.
+# column_name -> (dotted path in the raw JSON, DuckDB type).
+# priorita_id is not part of the JSON - it's the query filter used to fetch
+# the record, added here so results can be joined back to their priorita.
+FINANCNYPLANPRIORITY_COLUMNS: list[tuple[str, str, str]] = [
+    ("id", "id", "BIGINT"),
+    ("fond_id", "fond.id", "BIGINT"),
+    ("plansumaeu", "planSumaEU", "DOUBLE"),
+    ("plansumanarodne", "planSumaNarodne", "DOUBLE"),
+    ("plansumasukromne", "planSumaSukromne", "DOUBLE"),
+    ("plansumaverejne", "planSumaVerejne", "DOUBLE"),
+    ("prispevkytretichkrajin", "prispevkyTretichKrajin", "DOUBLE"),
+    ("prorata", "prorata", "DOUBLE"),
+    ("sumabezflexibility", "sumaBezFlexibility", "DOUBLE"),
+    ("sumabeztp", "sumaBezTP", "DOUBLE"),
+    ("sumaflexibility", "sumaFlexibility", "DOUBLE"),
+    ("sumatp", "sumaTP", "DOUBLE"),
+    ("zakladprevypocet", "zakladPreVypocet", "VARCHAR"),
+]
+
+# Mirrors one item of the nested "financnyPlanPriorityClenenie" list.
+# financnyplanpriority_id is the parent FK, added the same way as every other
+# child table in this repo.
+FINANCNYPLANPRIORITY_CLENENIE_COLUMNS: list[tuple[str, str, str]] = [
+    ("id", "id", "BIGINT"),
+    ("deleniefp_id", "delenieFP.id", "BIGINT"),
+    ("deleniefp_fond_id", "delenieFP.fond.id", "BIGINT"),
+    ("deleniefp_poradie", "delenieFP.poradie", "INTEGER"),
+    ("kategoriaregionov_id", "kategoriaRegionov.id", "BIGINT"),
+    ("plansumaeu", "planSumaEU", "DOUBLE"),
+    ("plansumanarodne", "planSumaNarodne", "DOUBLE"),
+    ("plansumasukromne", "planSumaSukromne", "DOUBLE"),
+    ("plansumaverejne", "planSumaVerejne", "DOUBLE"),
+    ("prispevkytretichkrajin", "prispevkyTretichKrajin", "DOUBLE"),
+    ("prorata", "prorata", "DOUBLE"),
+    ("sumabezflexibility", "sumaBezFlexibility", "DOUBLE"),
+    ("sumabeztp", "sumaBezTP", "DOUBLE"),
+    ("sumaflexibility", "sumaFlexibility", "DOUBLE"),
+    ("sumatp", "sumaTP", "DOUBLE"),
+]
+
+
+TABLE_COMMENTS: dict[str, str] = {
+    TABLE_FINANCNYPLANPRIORITY: (
+        "One row per fund financing a priority axis's financial plan "
+        "('financny plan priority'), e.g. the ERDF and Cohesion Fund rows "
+        "under the same priorita. Ids to iterate come from "
+        "itms21_program_priorita (populated by fetch_priorita.py). Purely "
+        "additive: once a priorita id has rows stored here it is never "
+        "queried again, and existing rows are never updated or deleted."
+    ),
+    TABLE_FINANCNYPLANPRIORITY_CLENENIE: (
+        "Further breakdown of a priority axis financial plan row, e.g. by "
+        "region category or by a 'delenieFP' funding sub-split. Child rows "
+        "carrying financnyplanpriority_id back to itms21_financnyplanpriority; "
+        "inserted once alongside their parent, never updated or deleted."
+    ),
+}
+
+COLUMN_COMMENTS: dict[str, dict[str, str]] = {
+    TABLE_FINANCNYPLANPRIORITY: {
+        "id": "ITMS21 numeric id of the priority axis financial plan record.",
+        "priorita_id": "Id of the parent priority axis (itms21_program_priorita.id); the query filter used to fetch this record, not part of the API's own JSON.",
+        "fond_id": "Id of the EU fund (e.g. ERDF, ESF+, Cohesion Fund) this financial plan row covers.",
+        "plansumaeu": "Planned EU contribution amount, in euro.",
+        "plansumanarodne": "Planned national (public + private) contribution amount, in euro.",
+        "plansumasukromne": "Planned private contribution amount, in euro.",
+        "plansumaverejne": "Planned public national contribution amount, in euro.",
+        "prispevkytretichkrajin": "Planned contribution from third countries, in euro.",
+        "prorata": "Pro-rata allocation factor applied to this financial plan row.",
+        "sumabezflexibility": "Planned total amount excluding the mid-term flexibility reserve, in euro.",
+        "sumabeztp": "Planned total amount excluding technical assistance, in euro.",
+        "sumaflexibility": "Amount allocated from the mid-term flexibility reserve, in euro.",
+        "sumatp": "Amount allocated to technical assistance, in euro.",
+        "zakladprevypocet": "Basis used for calculating this financial plan row (e.g. 'COV' for total eligible cost).",
+    },
+    TABLE_FINANCNYPLANPRIORITY_CLENENIE: {
+        "financnyplanpriority_id": "Id of the parent priority axis financial plan row (itms21_financnyplanpriority.id).",
+        "id": "ITMS21 numeric id of this breakdown row.",
+        "deleniefp_id": "Id of the funding sub-split ('delenie financneho planu') this breakdown row belongs to, when applicable.",
+        "deleniefp_fond_id": "Id of the fund associated with the funding sub-split.",
+        "deleniefp_poradie": "Display order of the funding sub-split within its parent.",
+        "kategoriaregionov_id": "Id of the region category (e.g. less-developed vs. more-developed region) this breakdown row applies to, when applicable.",
+        "plansumaeu": "Planned EU contribution amount for this breakdown, in euro.",
+        "plansumanarodne": "Planned national (public + private) contribution amount for this breakdown, in euro.",
+        "plansumasukromne": "Planned private contribution amount for this breakdown, in euro.",
+        "plansumaverejne": "Planned public national contribution amount for this breakdown, in euro.",
+        "prispevkytretichkrajin": "Planned contribution from third countries for this breakdown, in euro.",
+        "prorata": "Pro-rata allocation factor applied to this breakdown row.",
+        "sumabezflexibility": "Planned total amount excluding the mid-term flexibility reserve, for this breakdown, in euro.",
+        "sumabeztp": "Planned total amount excluding technical assistance, for this breakdown, in euro.",
+        "sumaflexibility": "Amount allocated from the mid-term flexibility reserve, for this breakdown, in euro.",
+        "sumatp": "Amount allocated to technical assistance, for this breakdown, in euro.",
+    },
+}
+
+
+def _esc(value: str) -> str:
+    """Escape a string for embedding in a single-quoted SQL literal."""
+    return value.replace("'", "''")
+
+
+def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
+    """Attach English COMMENT ON metadata to every table/column above. Safe to
+    re-run on every invocation - COMMENT ON simply overwrites."""
+    for table, comment in TABLE_COMMENTS.items():
+        con.execute(f"COMMENT ON TABLE {table} IS '{_esc(comment)}'")
+    for table, columns in COLUMN_COMMENTS.items():
+        for column, comment in columns.items():
+            con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
+
+
+def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
+    return con.execute(
+        "SELECT 1 FROM information_schema.tables WHERE lower(table_schema) = lower(?) AND lower(table_name) = lower(?)",
+        [DB_SCHEMA, name],
+    ).fetchone() is not None
+
+
+def ensure_full_schema(con: duckdb.DuckDBPyConnection) -> None:
+    cols_sql = ",\n            ".join(f"{col} {sqltype}" for col, _, sqltype in FINANCNYPLANPRIORITY_COLUMNS)
+    con.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_FINANCNYPLANPRIORITY} (
+            priorita_id BIGINT,
+            {cols_sql},
+            PRIMARY KEY (id)
+        )
+    """)
+
+    cols_sql = ",\n            ".join(
+        f"{col} {sqltype}" for col, _, sqltype in FINANCNYPLANPRIORITY_CLENENIE_COLUMNS
+    )
+    con.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_FINANCNYPLANPRIORITY_CLENENIE} (
+            financnyplanpriority_id BIGINT,
+            {cols_sql}
+        )
+    """)
+
+
+def store_records(
+    con: duckdb.DuckDBPyConnection,
+    priorita_id: int,
+    records: list[dict],
+    known_ids: set[int],
+    known_clenenie_pairs: set[tuple[int, int]],
+) -> tuple[int, int]:
+    """Insert financnyplanpriority records (and their clenenie child rows)
+    returned for one priorita id, skipping anything already stored
+    (known_ids / known_clenenie_pairs are snapshotted once per sync run - see
+    sync_financnyplanpriority - which is safe because a given
+    financnyplanpriority/clenenie id only ever appears under one priorita, so
+    no two concurrently-processed priorita ids can race on the same row).
+
+    Returns (new_parent_rows, new_clenenie_rows).
+    """
+    columns_sql = ", ".join(col for col, _, _ in FINANCNYPLANPRIORITY_COLUMNS)
+    placeholders = ", ".join("?" for _ in FINANCNYPLANPRIORITY_COLUMNS)
+    clenenie_columns_sql = ", ".join(col for col, _, _ in FINANCNYPLANPRIORITY_CLENENIE_COLUMNS)
+    clenenie_placeholders = ", ".join("?" for _ in FINANCNYPLANPRIORITY_CLENENIE_COLUMNS)
+
+    new_parent_rows = 0
+    new_clenenie_rows = 0
+
+    for record in records:
+        record_id = record.get("id")
+        if record_id not in known_ids:
+            values = [priorita_id] + [_get(record, path) for _, path, _ in FINANCNYPLANPRIORITY_COLUMNS]
+            con.execute(
+                f"INSERT INTO {TABLE_FINANCNYPLANPRIORITY} (priorita_id, {columns_sql}) VALUES (?, {placeholders}) "
+                f"ON CONFLICT (id) DO NOTHING",
+                values,
+            )
+            new_parent_rows += 1
+
+        clenenie_items = [
+            item for item in (record.get("financnyPlanPriorityClenenie") or [])
+            if (record_id, item.get("id")) not in known_clenenie_pairs
+        ]
+        if clenenie_items:
+            rows = [
+                [record_id] + [_get(item, path) for _, path, _ in FINANCNYPLANPRIORITY_CLENENIE_COLUMNS]
+                for item in clenenie_items
+            ]
+            con.executemany(
+                f"INSERT INTO {TABLE_FINANCNYPLANPRIORITY_CLENENIE} "
+                f"(financnyplanpriority_id, {clenenie_columns_sql}) VALUES (?, {clenenie_placeholders})",
+                rows,
+            )
+            new_clenenie_rows += len(clenenie_items)
+
+    return new_parent_rows, new_clenenie_rows
+
+
+def get_known_ids(con: duckdb.DuckDBPyConnection) -> set[int]:
+    """financnyplanpriority ids already stored, so they're never re-inserted."""
+    rows = con.execute(f"SELECT id FROM {TABLE_FINANCNYPLANPRIORITY}").fetchall()
+    return {row[0] for row in rows}
+
+
+def get_known_clenenie_pairs(con: duckdb.DuckDBPyConnection) -> set[tuple[int, int]]:
+    """(financnyplanpriority_id, id) pairs already stored, so clenenie rows
+    are never re-inserted - same shape as fetch_ciselniky.py's
+    get_known_pairs, needed because this child table has no primary key."""
+    rows = con.execute(
+        f"SELECT financnyplanpriority_id, id FROM {TABLE_FINANCNYPLANPRIORITY_CLENENIE}"
+    ).fetchall()
+    return {(row[0], row[1]) for row in rows}
+
+
+def get_source_priorita_ids(con: duckdb.DuckDBPyConnection) -> set[int]:
+    """Priorita ids to iterate, read from itms21_program_priorita (populated
+    by fetch_priorita.py). Raises if that table doesn't exist yet - this
+    script has no list endpoint of its own and depends entirely on
+    fetch_priorita.py having run first."""
+    if not _table_exists(con, SOURCE_TABLE_PRIORITA):
+        raise RuntimeError(
+            f"{DB_SCHEMA}.{SOURCE_TABLE_PRIORITA} does not exist. "
+            "Run scripts/fetch_priorita.py first - it populates this table, "
+            "which is the only source of priorita ids for fetch_financnyplanpriority.py."
+        )
+    rows = con.execute(f"SELECT DISTINCT id FROM {SOURCE_TABLE_PRIORITA} WHERE id IS NOT NULL").fetchall()
+    return {row[0] for row in rows}
+
+
+def sync_financnyplanpriority() -> tuple[int, int, int, int]:
+    """Query every priorita id every run (cheap - there are only a few dozen)
+    and insert only the financnyplanpriority/clenenie rows not already
+    stored.
+
+    Returns (total_priorita, new_parent_rows, new_clenenie_rows, failed_count).
+    """
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(str(DB_PATH))
+    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
+    con.execute(f"SET schema = '{DB_SCHEMA}'")
+    ensure_full_schema(con)
+    apply_comments(con)
+
+    priorita_ids = get_source_priorita_ids(con)
+    print(f"{SOURCE_TABLE_PRIORITA} has {len(priorita_ids)} distinct priorita id(s) to query.")
+
+    known_ids = get_known_ids(con)
+    known_clenenie_pairs = get_known_clenenie_pairs(con)
+
+    new_parent_rows = 0
+    new_clenenie_rows = 0
+    failed_count = 0
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_id = {executor.submit(fetch_for_priorita, pid): pid for pid in priorita_ids}
+        for i, future in enumerate(as_completed(future_to_id), start=1):
+            priorita_id = future_to_id[future]
+            records = future.result()
+            if records is None:
+                failed_count += 1
+                continue
+            parent_added, clenenie_added = store_records(con, priorita_id, records, known_ids, known_clenenie_pairs)
+            new_parent_rows += parent_added
+            new_clenenie_rows += clenenie_added
+
+            if i % 50 == 0 or i == len(priorita_ids):
+                con.commit()  # periodic commit so progress survives an interruption
+                print(f"  Progress: {i}/{len(priorita_ids)} priorita processed "
+                      f"({new_parent_rows} new rows, {failed_count} failed)")
+
+    con.commit()
+    con.close()
+
+    return len(priorita_ids), new_parent_rows, new_clenenie_rows, failed_count
+
+
+def main():
+    total, new_parent, new_clenenie, failed = sync_financnyplanpriority()
+    print(f"Done. {total} priorita queried, {new_parent} new financnyplanpriority rows, "
+          f"{new_clenenie} new clenenie rows, {failed} failed.")
+
+
+if __name__ == "__main__":
+    main()
