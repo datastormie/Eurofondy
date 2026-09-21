@@ -59,7 +59,13 @@
 
   <p class="error" style="display:none;" id="error-box"></p>
 
-  <div class="table-scroll">
+  <div class="table-toolbar">
+    <span class="hint-inline">Name &amp; ICO stay frozen while scrolling →</span>
+    <button class="scroll-btn" id="scrollLeftBtn" title="Scroll left">←</button>
+    <button class="scroll-btn" id="scrollRightBtn" title="Scroll right">→</button>
+  </div>
+
+  <div class="table-scroll" id="tableScroll">
     <table id="dataTable" style="display:none;">
       <thead>
         <tr>
@@ -251,6 +257,13 @@ document.querySelectorAll('th').forEach(function (th) {
 });
 document.getElementById('prevPage').addEventListener('click', function () { currentPage -= 1; render(); });
 document.getElementById('nextPage').addEventListener('click', function () { currentPage += 1; render(); });
+
+document.getElementById('scrollLeftBtn').addEventListener('click', function () {
+  document.getElementById('tableScroll').scrollBy({ left: -250, behavior: 'smooth' });
+});
+document.getElementById('scrollRightBtn').addEventListener('click', function () {
+  document.getElementById('tableScroll').scrollBy({ left: 250, behavior: 'smooth' });
+});
 
 fetch(JSON_URL)
   .then(function (response) {

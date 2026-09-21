@@ -162,7 +162,17 @@ function renderChart(data) {
   if (fundingChart) fundingChart.destroy();
 
   const datasets = chartMetric === 'count'
-    ? [{ label: 'Projects', data: sorted.map(function(d) { return d.project_count; }), backgroundColor: '#003399', borderRadius: 3 }]
+    ? [{
+        label: 'Projects',
+        data: sorted.map(function(d) { return d.project_count; }),
+        borderColor: '#003399',
+        backgroundColor: 'rgba(0, 51, 153, 0.15)',
+        pointBackgroundColor: '#003399',
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        fill: true,
+        tension: 0.25
+      }]
     : [
         { label: 'EU contribution', data: sorted.map(function(d) { return d.zazmluvnene_eu; }), backgroundColor: '#003399', borderRadius: 3 },
         { label: 'National (SR) contribution', data: sorted.map(function(d) { return d.zazmluvnene_sr; }), backgroundColor: '#7C93C7', borderRadius: 3 }
@@ -188,7 +198,7 @@ function renderChart(data) {
   }
 
   fundingChart = new Chart(ctx, {
-    type: 'bar',
+    type: chartMetric === 'count' ? 'line' : 'bar',
     data: { labels: labels, datasets: datasets },
     options: {
       responsive: true,
