@@ -9,17 +9,23 @@ A data pipeline + static dashboard for Slovak EU structural funds (ITMS21,
 
 - `scripts/fetch_*.py` — Python scripts that pull data from the public
   `api.itms21.sk` API into a single shared DuckDB file.
-- `data/eufunds.duckdb` — the DuckDB store. Almost all tables live in the
-  `slovakia` schema (not the default `main`); the two tables that back the
-  live website (`itms21_programs_current`, `itms21_projects_current`) live in
-  a separate `website` schema instead. **Not the source of truth in git**: the
-  GitHub Actions workflow restores it from a GitHub Release asset
-  (`gh release download data-store ...`) before each run and re-uploads it
-  after, so the committed copy in the working tree can be stale. Don't assume
-  the local file reflects the latest fetched data.
+- `scripts/build_datamart.py` — reads the raw `slovakia` schema tables and
+  builds a derived `datamart` schema (6 tables: `regional_funding`,
+  `regional_summary`, `program_summary`, `beneficiary_funding`,
+  `procurement_contracts`, `payment_disbursements`), then exports each of
+  those tables to a `docs/*_data.json` file for the website.
+- `data/eufunds.duckdb` — the DuckDB store. Almost all raw fetched tables
+  live in the `slovakia` schema (not the default `main`); the derived
+  `datamart` schema (see above) holds the tables that back the website.
+  **Not the source of truth in git**: the GitHub Actions workflow restores it
+  from a GitHub Release asset (`gh release download data-store ...`) before
+  each run and re-uploads it after, so the committed copy in the working tree
+  can be stale. Don't assume the local file reflects the latest fetched data.
 - `docs/` — a static GitHub Pages site (`index.html`, `projects.html`,
-  `top_projects_chart.html`, `top_recipients_chart.html`) that reads
-  `docs/*_data.json` files exported by a subset of the fetch scripts.
+  `top_projects_chart.html`, `regional_funding.html`, `beneficiaries.html`,
+  `procurement.html`, `disbursements.html`) that reads `docs/*_data.json`
+  files exported by `scripts/build_datamart.py` (not the fetch scripts
+  themselves).
 
 There is no build step, package manager, or test suite — this is intentionally
 minimal: plain Python scripts and plain HTML/CSS/vanilla JS with no bundler.
@@ -61,9 +67,7 @@ conventions to reuse rather than reinvent.
 
 Key invariant across almost every script: once a row's primary key is known to
 be stored, it is never re-fetched, updated, or deleted — sync is purely
-additive. The only exceptions are the small "current state" tables
-(`itms21_programs_current`, `itms21_projects_current`) which are fully
-overwritten every run because they back the live dashboard.
+additive.
 
 All scripts are orchestrated in a fixed order by `.github/workflows/monthly.yml`,
 which runs on the 1st of each month (`cron: "0 5 1 * *"`) and also supports
@@ -72,13 +76,19 @@ exist and in what order they run.
 
 ### Website (`docs/`)
 
-Static pages fetch pre-generated JSON (`program_data.json`, `project_data.json`)
-at page load and do all filtering/sorting/pagination client-side — there is no
-backend for the site itself. `docs/projects_logic.js` holds the pure,
-framework-free filter/sort/paginate/aggregate functions shared by
-`projects.html` and the two chart pages (written to be usable from both a
-`<script>` tag and Node, though no test harness currently exercises the Node
-path). Charts use Chart.js loaded from a CDN.
+Static pages fetch pre-generated JSON — `regional_funding_data.json`,
+`regional_summary_data.json`, `program_summary_data.json`,
+`beneficiary_funding_data.json`, `procurement_contracts_data.json`,
+`payment_disbursements_data.json` — at page load and do all
+filtering/sorting/pagination client-side; there is no backend for the site
+itself. Those six JSON files are produced by `scripts/build_datamart.py` from
+the `datamart` schema tables, not by the fetch scripts. `docs/projects_logic.js`
+holds the pure, framework-free filter/sort/paginate functions shared across
+pages (written to be usable from both a `<script>` tag and Node, though no
+test harness currently exercises the Node path); `docs/datamart_logic.js`
+holds additional shared helpers (grouping, program filtering, cumulative
+sums) used by the newer datamart-driven pages. Charts use Chart.js loaded
+from a CDN.
 
 **Use the `eurofondy-website-brand` skill** before touching any file under
 `docs/` — it defines the color palette, typography, and component patterns
@@ -93,3 +103,11 @@ introducing one-off styling.
 Most fetched entities (vyzva, zonfp, ciselniky, aktivitaprojekt, etc.) are
 DuckDB-only with no website page — they exist so the data is queryable, not
 because they're displayed.
+
+There's a second, derived fork of that flow for the website: `slovakia`
+schema tables → `scripts/build_datamart.py` → `datamart` schema tables
+(`regional_funding`, `regional_summary`, `program_summary`,
+`beneficiary_funding`, `procurement_contracts`, `payment_disbursements`) →
+JSON exports → `regional_funding.html`, `beneficiaries.html`,
+`procurement.html`, `disbursements.html` (plus `projects.html` and
+`top_projects_chart.html`, which also read `regional_funding_data.json`).

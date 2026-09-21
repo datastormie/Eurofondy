@@ -1,34 +1,26 @@
 """
 Fetches the project list from api.itms21.sk, detects which project ids are
 not yet stored in DuckDB, and fetches full details ONLY for those new ids.
-Projects already stored are never re-fetched and never deleted, even if they
-disappear from the API list — the table only ever grows (purely additive
-incremental sync).
+Projects already stored are never re-fetched and never deleted, even if
+they disappear from the API list -- the table only ever grows (purely
+additive incremental sync).
 
-Each detail fetched this way is stored twice, from the same API response:
-  - a flat summary row in `projects_current`, which feeds docs/project_data.json
-    for the projects.html page (unchanged from before).
-  - the full nested detail, decomposed into a normalized PROJEKT table plus
-    ~30 PROJEKT_* child/grandchild tables (one row per inner list item, e.g.
-    PROJEKT_FINANCNYPLAN, PROJEKT_AKTIVITY, PROJEKT_ZMENAPROJEKT_DOKUMENT...).
-    Every one of those tables carries a PROJECT_ID (and, where the item is
-    nested two levels deep, its immediate parent row id) so they can all be
-    joined back to PROJEKT. This richer schema is NOT used by the website —
-    it exists purely so every inner attribute of a project is queryable in
-    DuckDB. Rows are inserted once and never updated/deleted, gated by the
-    same "id not yet known" check as the simple table above.
+Each detail fetched is decomposed into a normalized PROJEKT table plus
+~30 PROJEKT_* child/grandchild tables (one row per inner list item, e.g.
+PROJEKT_FINANCNYPLAN, PROJEKT_AKTIVITY, PROJEKT_ZMENAPROJEKT_DOKUMENT...).
+Every one of those tables carries a PROJECT_ID (and, where the item is
+nested two levels deep, its immediate parent row id) so they can all be
+joined back to PROJEKT. Rows are inserted once and never updated/deleted,
+gated by the same "id not yet known" check as PROJEKT itself.
 
 Run monthly via GitHub Actions (.github/workflows/monthly.yml).
 """
 
-import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
-import pandas as pd
 import requests
 
 LIST_URL = "https://api.itms21.sk/public/v1/projekt?limit=-1"
@@ -36,12 +28,8 @@ DETAIL_URL_TEMPLATE = "https://api.itms21.sk/public/v1/projekt/id/{id}"
 
 DB_PATH = Path("data/eufunds.duckdb")  # shared DuckDB file, separate table inside
 DB_SCHEMA = "slovakia"  # dedicated schema inside the shared file
-WEBSITE_SCHEMA = "website"  # schema for tables that back the live website, e.g. projects_current
-JSON_OUT_PATH = Path("docs/project_data.json")
 
 TABLE_PREFIX = "itms21_"
-TABLE_CURRENT = f"{TABLE_PREFIX}projects_current"
-TABLE_CURRENT_FQ = f"{WEBSITE_SCHEMA}.{TABLE_CURRENT}"
 
 MAX_WORKERS = 8           # concurrent detail requests — keep modest to avoid hammering the API
 REQUEST_TIMEOUT = 30
@@ -81,119 +69,6 @@ def fetch_detail(project_id: int) -> dict | None:
                 return None
             time.sleep(RETRY_BACKOFF_SECONDS * attempt)
     return None
-
-
-def extract_eu_sr(financny_plan: list[dict]) -> tuple[float, float]:
-    """Split the financial plan into EU vs national (SR) contribution totals."""
-    eu = 0.0
-    sr = 0.0
-    for item in financny_plan or []:
-        zdroj_name = (item.get("zdroj") or {}).get("nazovSk", "")
-        suma = item.get("suma") or 0
-        if "EÚ" in zdroj_name or "EU" in zdroj_name:
-            eu += suma
-        elif "ŠR" in zdroj_name or "SR" in zdroj_name:
-            sr += suma
-    return eu, sr
-
-
-def flatten_project(d: dict) -> dict:
-    """Flatten one detailed project record into a single flat row."""
-    program = d.get("program") or {}
-    prijimatel = d.get("prijimatel") or {}
-    eu, sr = extract_eu_sr(d.get("financnyPlan", []))
-
-    return {
-        "project_id": d.get("id"),
-        "kod": d.get("kod"),
-        "nazov": d.get("nazov"),
-        "program_skratka": program.get("skratka"),
-        "program_nazov": program.get("nazovSk"),
-        "prijimatel_nazov": prijimatel.get("nazov"),
-        "prijimatel_ico": prijimatel.get("ico"),
-        "stav": d.get("stav"),
-        "vrealizacii": bool(d.get("vrealizacii")),
-        "ukonceny": bool(d.get("ukonceny")),
-        "suma_eu": eu,
-        "suma_sr": sr,
-        "suma_spolu": eu + sr,
-        "celkova_zazmluvnena_suma": d.get("celkovaZazmluvnenaSuma"),
-        "poskytnute_prostriedky": d.get("poskytnuteProstriedky"),
-        "planovany_zaciatok": d.get("planovanaRealizaciaZaciatok"),
-        "planovany_koniec": d.get("planovanaRealizaciaKoniec"),
-        "created_at": d.get("createdAt"),
-        "updated_at": d.get("updatedAt"),
-    }
-
-
-def _has_primary_key(con: duckdb.DuckDBPyConnection, schema: str, table: str) -> bool:
-    return con.execute(
-        "SELECT 1 FROM duckdb_constraints() WHERE schema_name = ? AND table_name = ? "
-        "AND constraint_type = 'PRIMARY KEY'",
-        [schema, table],
-    ).fetchone() is not None
-
-
-def migrate_to_website_schema(con: duckdb.DuckDBPyConnection) -> None:
-    """One-time move of any rows still sitting in the legacy `slovakia`-schema
-    copy of this table into the already-created `website`-schema table
-    (DuckDB has no ALTER TABLE ... SET SCHEMA, so this INSERTs into the
-    already-defined target table then drops the old copy); a no-op once
-    already moved or if the table was never created under `slovakia`."""
-    old_exists = con.execute(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND lower(table_name) = lower(?)",
-        [DB_SCHEMA, TABLE_CURRENT],
-    ).fetchone() is not None
-    if not old_exists:
-        return
-    con.execute(
-        f"INSERT INTO {TABLE_CURRENT_FQ} SELECT * FROM {DB_SCHEMA}.{TABLE_CURRENT} "
-        f"ON CONFLICT (project_id) DO NOTHING"
-    )
-    con.execute(f"DROP TABLE {DB_SCHEMA}.{TABLE_CURRENT}")
-
-
-def ensure_table(con: duckdb.DuckDBPyConnection) -> None:
-    # One-time rename from the pre-"itms21_"-prefix table name; a no-op once
-    # the rename has happened (ALTER TABLE IF EXISTS is idempotent).
-    con.execute(f"ALTER TABLE IF EXISTS projects_current RENAME TO {TABLE_CURRENT}")
-
-    create_sql = f"""
-        CREATE TABLE IF NOT EXISTS {TABLE_CURRENT_FQ} (
-            project_id                  INTEGER PRIMARY KEY,
-            kod                         VARCHAR,
-            nazov                       VARCHAR,
-            program_skratka             VARCHAR,
-            program_nazov               VARCHAR,
-            prijimatel_nazov            VARCHAR,
-            prijimatel_ico              VARCHAR,
-            stav                        VARCHAR,
-            vrealizacii                 BOOLEAN,
-            ukonceny                    BOOLEAN,
-            suma_eu                     DOUBLE,
-            suma_sr                     DOUBLE,
-            suma_spolu                  DOUBLE,
-            celkova_zazmluvnena_suma    DOUBLE,
-            poskytnute_prostriedky      DOUBLE,
-            planovany_zaciatok          BIGINT,
-            planovany_koniec            BIGINT,
-            created_at                  BIGINT,
-            updated_at                  BIGINT
-        )
-    """
-    con.execute(create_sql)
-
-    # Repair a table created by an earlier buggy version of this migration
-    # that used CREATE TABLE ... AS SELECT to move it into `website` — DuckDB's
-    # CTAS silently drops the PRIMARY KEY, which breaks upsert_row's ON
-    # CONFLICT clause. A no-op once the table has its constraint back.
-    if not _has_primary_key(con, WEBSITE_SCHEMA, TABLE_CURRENT):
-        con.execute(f"ALTER TABLE {TABLE_CURRENT_FQ} RENAME TO {TABLE_CURRENT}_nopk")
-        con.execute(create_sql)
-        con.execute(f"INSERT INTO {TABLE_CURRENT_FQ} SELECT * FROM {WEBSITE_SCHEMA}.{TABLE_CURRENT}_nopk")
-        con.execute(f"DROP TABLE {WEBSITE_SCHEMA}.{TABLE_CURRENT}_nopk")
-
-    migrate_to_website_schema(con)
 
 
 def _get(d: dict | None, path: str):
@@ -451,15 +326,6 @@ CHILD_TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
 
 
 TABLE_COMMENTS: dict[str, str] = {
-    TABLE_CURRENT_FQ: (
-        "Flat summary of every funded project, one row per project id; feeds "
-        "docs/project_data.json for the projects.html page. Unlike "
-        "itms21_programs_current, this table is NOT refreshed on every run - "
-        "a row is only ever written once, when the project's detail is "
-        "first fetched (insertion is gated by the same 'id not yet known' "
-        "check as itms21_projekt), so its status/amounts are only as fresh "
-        "as that single fetch."
-    ),
     TABLE_PROJEKT: (
         "One row per funded project ('projekt'), created once a grant "
         "application ('zonfp') is approved. Purely additive: once an id is "
@@ -516,27 +382,6 @@ for _child_table in CHILD_TABLES:
     )
 
 COLUMN_COMMENTS: dict[str, dict[str, str]] = {
-    TABLE_CURRENT_FQ: {
-        "project_id": "ITMS21 numeric id of the project.",
-        "kod": "Project code.",
-        "nazov": "Project name.",
-        "program_skratka": "Abbreviation of the parent programme.",
-        "program_nazov": "Name of the parent programme in Slovak.",
-        "prijimatel_nazov": "Name of the beneficiary (recipient) implementing the project.",
-        "prijimatel_ico": "Company registration number (ICO) of the beneficiary.",
-        "stav": "Status of the project at the time it was fetched.",
-        "vrealizacii": "Whether the project was being implemented at the time it was fetched.",
-        "ukonceny": "Whether the project was completed at the time it was fetched.",
-        "suma_eu": "EU-fund contribution, computed from the project's financial plan, in euro.",
-        "suma_sr": "Slovak national co-financing contribution, computed from the project's financial plan, in euro.",
-        "suma_spolu": "Total contribution (EU + national), in euro.",
-        "celkova_zazmluvnena_suma": "Total contracted project value at the time it was fetched, in euro.",
-        "poskytnute_prostriedky": "Funds disbursed to the project at the time it was fetched, in euro.",
-        "planovany_zaciatok": "Planned implementation start date (epoch milliseconds).",
-        "planovany_koniec": "Planned implementation end date (epoch milliseconds).",
-        "created_at": "Record creation timestamp in the source system (epoch milliseconds).",
-        "updated_at": "Record last-updated timestamp in the source system, at the time it was fetched (epoch milliseconds).",
-    },
     TABLE_PROJEKT: {
         "id": "ITMS21 numeric id of the project.",
         "href": "API URL of this project's own detail resource.",
@@ -957,57 +802,19 @@ def get_known_ids(con: duckdb.DuckDBPyConnection) -> set[int]:
     return {row[0] for row in rows}
 
 
-def upsert_row(con: duckdb.DuckDBPyConnection, row: dict) -> None:
-    con.execute(f"""
-        INSERT INTO {TABLE_CURRENT_FQ} (
-            project_id, kod, nazov, program_skratka, program_nazov,
-            prijimatel_nazov, prijimatel_ico, stav, vrealizacii, ukonceny,
-            suma_eu, suma_sr, suma_spolu, celkova_zazmluvnena_suma,
-            poskytnute_prostriedky, planovany_zaciatok, planovany_koniec,
-            created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (project_id) DO UPDATE SET
-            kod = excluded.kod,
-            nazov = excluded.nazov,
-            program_skratka = excluded.program_skratka,
-            program_nazov = excluded.program_nazov,
-            prijimatel_nazov = excluded.prijimatel_nazov,
-            prijimatel_ico = excluded.prijimatel_ico,
-            stav = excluded.stav,
-            vrealizacii = excluded.vrealizacii,
-            ukonceny = excluded.ukonceny,
-            suma_eu = excluded.suma_eu,
-            suma_sr = excluded.suma_sr,
-            suma_spolu = excluded.suma_spolu,
-            celkova_zazmluvnena_suma = excluded.celkova_zazmluvnena_suma,
-            poskytnute_prostriedky = excluded.poskytnute_prostriedky,
-            planovany_zaciatok = excluded.planovany_zaciatok,
-            planovany_koniec = excluded.planovany_koniec,
-            created_at = excluded.created_at,
-            updated_at = excluded.updated_at
-    """, [
-        row["project_id"], row["kod"], row["nazov"], row["program_skratka"], row["program_nazov"],
-        row["prijimatel_nazov"], row["prijimatel_ico"], row["stav"], row["vrealizacii"], row["ukonceny"],
-        row["suma_eu"], row["suma_sr"], row["suma_spolu"], row["celkova_zazmluvnena_suma"],
-        row["poskytnute_prostriedky"], row["planovany_zaciatok"], row["planovany_koniec"],
-        row["created_at"], row["updated_at"],
-    ])
-
-
 def sync_projects() -> tuple[int, int, int]:
-    """Fetch the list, then fetch full details only for ids not already stored.
+    """Fetch the list, then fetch full details only for ids not already
+    stored in the normalized itms21_projekt schema.
 
-    Existing rows are left untouched (no re-fetch) and nothing is ever deleted,
-    even if a project drops out of the current API list.
+    Existing rows are left untouched (no re-fetch) and nothing is ever
+    deleted, even if a project drops out of the current API list.
 
     Returns (total_in_list, fetched_count, failed_count).
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
     con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
-    con.execute(f"CREATE SCHEMA IF NOT EXISTS {WEBSITE_SCHEMA}")
     con.execute(f"SET schema = '{DB_SCHEMA}'")
-    ensure_table(con)
     ensure_full_schema(con)
     apply_comments(con)
 
@@ -1016,9 +823,7 @@ def sync_projects() -> tuple[int, int, int]:
     print(f"List returned {len(list_items)} projects.")
 
     known_ids = get_known_ids(con)
-
     to_fetch = [item.get("id") for item in list_items if item.get("id") not in known_ids]
-
     print(f"{len(to_fetch)} new project(s) to fetch; {len(list_items) - len(to_fetch)} already stored (skipped).")
 
     fetched_count = 0
@@ -1033,13 +838,11 @@ def sync_projects() -> tuple[int, int, int]:
                 if detail is None:
                     failed_count += 1
                     continue
-                row = flatten_project(detail)
-                upsert_row(con, row)
                 store_full_detail(con, detail)
                 fetched_count += 1
 
                 if i % 50 == 0 or i == len(to_fetch):
-                    con.commit()  # periodic commit so progress survives an interruption
+                    con.commit()
                     print(f"  Progress: {i}/{len(to_fetch)} processed "
                           f"({fetched_count} ok, {failed_count} failed)")
 
@@ -1049,39 +852,9 @@ def sync_projects() -> tuple[int, int, int]:
     return len(list_items), fetched_count, failed_count
 
 
-def export_to_json() -> None:
-    con = duckdb.connect(str(DB_PATH))
-    con.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
-    con.execute(f"CREATE SCHEMA IF NOT EXISTS {WEBSITE_SCHEMA}")
-    con.execute(f"SET schema = '{DB_SCHEMA}'")
-    apply_comments(con)
-    df = con.execute(f"SELECT * FROM {TABLE_CURRENT_FQ} ORDER BY suma_spolu DESC").fetchdf()
-    con.close()
-
-    JSON_OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    # Convert epoch-millisecond columns to proper ISO date strings for display.
-    # DuckDB/pandas keep them as BIGINT internally (fine for storage/queries),
-    # but the exported JSON should be human-readable, same as program_data.json.
-    date_cols = ["planovany_zaciatok", "planovany_koniec", "created_at", "updated_at"]
-    for col in date_cols:
-        df[col] = pd.to_datetime(df[col], unit="ms", errors="coerce")
-
-    export = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "projects": json.loads(df.to_json(orient="records", date_format="iso")),
-    }
-
-    with open(JSON_OUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(export, f, ensure_ascii=False, indent=2)
-
-    print(f"Exported {len(df)} projects to {JSON_OUT_PATH}")
-
-
 def main():
     total, fetched, failed = sync_projects()
     print(f"Done. {total} total in list, {fetched} newly fetched, {failed} failed.")
-    export_to_json()
 
 
 if __name__ == "__main__":

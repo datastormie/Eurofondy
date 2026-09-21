@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
 <style>
   .chart-wrap { height: 1400px; }
   @media (max-width: 768px) { .chart-wrap { height: 1100px; } }
@@ -30,7 +30,10 @@
     <a href="index.html">Programs</a>
     <a href="projects.html">Projects</a>
     <a class="current" href="top_projects_chart.html">Top 50 Projects</a>
-    <a href="top_recipients_chart.html">Top 25 Recipients</a>
+    <a href="regional_funding.html">Regional Funding</a>
+    <a href="beneficiaries.html">Beneficiaries</a>
+    <a href="procurement.html">Procurement</a>
+    <a href="disbursements.html">Disbursements</a>
   </nav>
 </div>
 <div class="card card--narrow">
@@ -55,7 +58,7 @@ if (HAS_CHART) {
   Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
 }
 
-const JSON_URL = 'project_data.json';
+const JSON_URL = 'regional_funding_data.json';
 
 function formatIsoDate(iso) {
   const d = new Date(iso);
@@ -87,13 +90,13 @@ function renderTopChart(data) {
   // so keeping top50 sorted descending (largest first) puts the most expensive project at the top.
   const ordered = top50;
 
-  const codes = ordered.map(function (p) { return p.kod || ''; });
+  const codes = ordered.map(function (p) { return p.project_kod || ''; });
 
   const labels = ordered.map(function (p) {
-    const name = p.nazov || p.kod || ('#' + p.project_id);
+    const name = p.project_nazov || p.project_kod || ('#' + p.project_id);
     return name.length > 55 ? name.slice(0, 52) + '…' : name;
   });
-  const fullNames = ordered.map(function (p) { return p.nazov || ''; });
+  const fullNames = ordered.map(function (p) { return p.project_nazov || ''; });
   const programs = ordered.map(function (p) { return p.program_skratka || ''; });
   const programNames = ordered.map(function (p) { return p.program_nazov || ''; });
   const srAmounts = ordered.map(function (p) { return p.suma_sr || 0; });
@@ -164,7 +167,7 @@ fetch(JSON_URL)
     return response.json();
   })
   .then(function (payload) {
-    const data = payload.projects;
+    const data = payload.regional_funding;
     document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
     renderTopChart(data);
   })

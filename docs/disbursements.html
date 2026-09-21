@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Disbursements — Slovakia 2021–2027</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=4">
+<style>
+  .card { max-width: 1300px; }
+  table { min-width: 1100px; }
+  .chart-wrap { height: 420px; margin-bottom: 28px; }
+  @media (max-width: 480px) { table { min-width: 900px; } }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="index.html">
+    <svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#003399"/>
+      <g fill="#FFCC00">
+        <circle cx="12" cy="4" r="1.15"/><circle cx="18.5" cy="7.8" r="1.15"/><circle cx="18.5" cy="16.2" r="1.15"/>
+        <circle cx="12" cy="20" r="1.15"/><circle cx="5.5" cy="16.2" r="1.15"/><circle cx="5.5" cy="7.8" r="1.15"/>
+      </g>
+    </svg>
+    EU Funds Slovakia
+  </a>
+  <nav class="nav-links">
+    <a href="index.html">Programs</a>
+    <a href="projects.html">Projects</a>
+    <a href="top_projects_chart.html">Top 50 Projects</a>
+    <a href="regional_funding.html">Regional Funding</a>
+    <a href="beneficiaries.html">Beneficiaries</a>
+    <a href="procurement.html">Procurement</a>
+    <a class="current" href="disbursements.html">Disbursements</a>
+  </nav>
+</div>
+<div class="card">
+  <h1>Payment Disbursements</h1>
+  <span class="title-rule"></span>
+  <p class="subtitle">Payment requests claimed over time, monthly and cumulative</p>
+  <p class="updated" id="updated-label">Loading...</p>
+  <p class="hint">Amounts are claimed amounts (narokovanaSuma), not necessarily yet paid — see the "Unpaid" column below for requests still awaiting payment.</p>
+
+  <div class="filters" style="grid-template-columns: 1fr 1fr;">
+    <div class="filter-group">
+      <label for="programToggle">Program</label>
+      <div class="multiselect" id="programMulti">
+        <button type="button" class="ms-toggle" id="programToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="programToggleLabel">All programs</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="programPanel" role="dialog" aria-label="Filter by program">
+          <div class="ms-actions">
+            <button type="button" id="programSelectAll">Select all</button>
+            <button type="button" id="programClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="programOptions"></div>
+        </div>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label for="filterType">Payment type</label>
+      <select id="filterType"><option value="">All types</option></select>
+    </div>
+  </div>
+
+  <p class="error" style="display:none;" id="error-box"></p>
+
+  <div class="chart-wrap"><canvas id="timelineChart"></canvas></div>
+
+  <div class="table-scroll">
+    <table id="dataTable" style="display:none;">
+      <thead>
+        <tr>
+          <th data-key="kod" data-type="string">Code</th>
+          <th data-key="typ" data-type="string">Type</th>
+          <th data-key="project_nazov" data-type="string">Project</th>
+          <th data-key="program_skratka" data-type="string">Program</th>
+          <th data-key="prijimatel_nazov" data-type="string">Recipient</th>
+          <th data-key="narokovanasuma" data-type="number">Claimed (€)</th>
+          <th data-key="event_date" data-type="date">Date</th>
+          <th data-key="neuhradena" data-type="bool">Unpaid</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+    <p class="empty" id="emptyMessage" style="display:none;">No payment requests match the current filters.</p>
+  </div>
+
+  <div class="pagination" id="pagination" style="display:none;">
+    <button id="prevPage">← Previous</button>
+    <span id="pageInfo"></span>
+    <button id="nextPage">Next →</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="projects_logic.js"></script>
+<script src="datamart_logic.js"></script>
+<script>
+const HAS_CHART = typeof Chart !== 'undefined';
+if (HAS_CHART) Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
+
+const JSON_URL = 'payment_disbursements_data.json';
+const PAGE_SIZE = 25;
+let allData = [];
+let allPrograms = [];
+const selectedPrograms = new Set();
+let currentPage = 1;
+let sortKey = 'event_date';
+let sortDir = 'desc';
+
+function typeOf(key) {
+  const th = document.querySelector('th[data-key="' + key + '"]');
+  return th ? th.dataset.type : 'string';
+}
+
+function formatEUR(value) {
+  if (value == null || Number.isNaN(Number(value))) return '';
+  return '€' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function formatEURShort(value) {
+  if (value >= 1e9) return (value / 1e9).toFixed(2) + ' B';
+  if (value >= 1e6) return (value / 1e6).toFixed(1) + ' M';
+  if (value >= 1e3) return (value / 1e3).toFixed(0) + ' K';
+  return Number(value).toLocaleString();
+}
+
+function formatIsoDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatDateValue(value) {
+  if (value == null || value === '') return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function getFilters() {
+  return { type: document.getElementById('filterType').value };
+}
+
+function currentFiltered() {
+  let rows = DatamartLogic.filterByProgram(allData, Array.from(selectedPrograms));
+  const filters = getFilters();
+  if (filters.type) rows = rows.filter(function (r) { return r.typ === filters.type; });
+  return rows;
+}
+
+function updateProgramToggleLabel() {
+  const label = document.getElementById('programToggleLabel');
+  const count = selectedPrograms.size;
+  if (count === 0) label.textContent = 'All programs';
+  else if (count === 1) label.textContent = Array.from(selectedPrograms)[0];
+  else label.textContent = count + ' programs selected';
+}
+
+function populateProgramDropdown(data) {
+  const container = document.getElementById('programOptions');
+  allPrograms = ProjectsLogic.distinctPrograms(data);
+  container.innerHTML = '';
+  allPrograms.forEach(function (p) {
+    const id = 'prog_' + p.skratka.replace(/[^A-Za-z0-9_-]/g, '');
+    const wrap = document.createElement('label');
+    wrap.className = 'ms-option';
+    wrap.title = p.nazov || p.skratka;
+    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + escapeHtml(p.skratka) + '"><span>' + escapeHtml(p.skratka) + '</span>';
+    const cb = wrap.querySelector('input');
+    cb.addEventListener('change', function () {
+      if (cb.checked) selectedPrograms.add(p.skratka);
+      else selectedPrograms.delete(p.skratka);
+      updateProgramToggleLabel();
+      currentPage = 1;
+      render();
+    });
+    container.appendChild(wrap);
+  });
+  updateProgramToggleLabel();
+}
+
+function populateTypeFilter(data) {
+  const select = document.getElementById('filterType');
+  const types = Array.from(new Set(data.map(function (r) { return r.typ; }).filter(Boolean))).sort();
+  types.forEach(function (t) {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    select.appendChild(opt);
+  });
+}
+
+let chartInstance = null;
+
+function renderChart(rows) {
+  if (!HAS_CHART) return;
+  const withDates = rows.filter(function (r) { return r.event_date; });
+  const grouped = DatamartLogic.groupSum(withDates, function (r) { return DatamartLogic.monthKey(r.event_date); }, ['narokovanasuma']);
+  grouped.sort(function (a, b) { return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; });
+  const withCumulative = DatamartLogic.withCumulative(grouped, 'narokovanasuma', 'cumulative');
+
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(document.getElementById('timelineChart').getContext('2d'), {
+    data: {
+      labels: withCumulative.map(function (g) { return g.key; }),
+      datasets: [
+        { type: 'bar', label: 'Monthly claimed (€)', data: withCumulative.map(function (g) { return g.narokovanasuma; }), backgroundColor: '#7C93C7', yAxisID: 'y' },
+        { type: 'line', label: 'Cumulative (€)', data: withCumulative.map(function (g) { return g.cumulative; }), borderColor: '#003399', backgroundColor: '#003399', yAxisID: 'y1', tension: 0.15 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { position: 'left', beginAtZero: true, ticks: { callback: function (v) { return '€' + formatEURShort(v); } } },
+        y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { callback: function (v) { return '€' + formatEURShort(v); } } }
+      }
+    }
+  });
+}
+
+function renderTableRows(rows) {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  rows.forEach(function (row) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + escapeHtml(row.kod || '') + '</td>' +
+      '<td>' + escapeHtml(row.typ || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.project_nazov || '') + '</td>' +
+      '<td>' + escapeHtml(row.program_skratka || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.prijimatel_nazov || '') + '</td>' +
+      '<td class="num">' + formatEUR(row.narokovanasuma) + '</td>' +
+      '<td>' + formatDateValue(row.event_date) + '</td>' +
+      '<td>' + (row.neuhradena ? 'Yes' : 'No') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderPaginationControls(pageResult) {
+  const pagination = document.getElementById('pagination');
+  const table = document.getElementById('dataTable');
+  const emptyMsg = document.getElementById('emptyMessage');
+  if (pageResult.totalRows === 0) {
+    table.style.display = 'none';
+    pagination.style.display = 'none';
+    emptyMsg.style.display = 'block';
+    return;
+  }
+  table.style.display = 'table';
+  emptyMsg.style.display = 'none';
+  pagination.style.display = 'flex';
+  document.getElementById('pageInfo').textContent =
+    'Showing ' + pageResult.start + '–' + pageResult.end + ' of ' + pageResult.totalRows +
+    ' (page ' + pageResult.page + ' of ' + pageResult.totalPages + ')';
+  document.getElementById('prevPage').disabled = pageResult.page <= 1;
+  document.getElementById('nextPage').disabled = pageResult.page >= pageResult.totalPages;
+}
+
+function render() {
+  const filtered = currentFiltered();
+  renderChart(filtered);
+  const sorted = ProjectsLogic.sortData(filtered, sortKey, sortDir, typeOf);
+  const pageResult = ProjectsLogic.paginate(sorted, currentPage, PAGE_SIZE);
+  currentPage = pageResult.page;
+  renderTableRows(pageResult.rows);
+  renderPaginationControls(pageResult);
+}
+
+document.querySelectorAll('th').forEach(function (th) {
+  th.addEventListener('click', function () {
+    const key = th.dataset.key;
+    if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortKey = key; sortDir = 'asc'; }
+    document.querySelectorAll('th').forEach(function (t) { t.classList.remove('sorted-asc', 'sorted-desc'); });
+    th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    currentPage = 1;
+    render();
+  });
+});
+
+document.getElementById('filterType').addEventListener('change', function () { currentPage = 1; render(); });
+
+const programMulti = document.getElementById('programMulti');
+const programToggle = document.getElementById('programToggle');
+programToggle.addEventListener('click', function (e) {
+  e.stopPropagation();
+  programMulti.classList.toggle('open');
+  programToggle.setAttribute('aria-expanded', programMulti.classList.contains('open') ? 'true' : 'false');
+});
+document.addEventListener('click', function (e) {
+  if (!programMulti.contains(e.target)) programMulti.classList.remove('open');
+});
+document.getElementById('programSelectAll').addEventListener('click', function () {
+  selectedPrograms.clear();
+  allPrograms.forEach(function (p) { selectedPrograms.add(p.skratka); });
+  document.querySelectorAll('#programOptions input[type="checkbox"]').forEach(function (cb) { cb.checked = true; });
+  updateProgramToggleLabel();
+  currentPage = 1;
+  render();
+});
+document.getElementById('programClearAll').addEventListener('click', function () {
+  selectedPrograms.clear();
+  document.querySelectorAll('#programOptions input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
+  updateProgramToggleLabel();
+  currentPage = 1;
+  render();
+});
+document.getElementById('prevPage').addEventListener('click', function () { currentPage -= 1; render(); });
+document.getElementById('nextPage').addEventListener('click', function () { currentPage += 1; render(); });
+
+fetch(JSON_URL)
+  .then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  })
+  .then(function (payload) {
+    allData = payload.payments;
+    document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
+    populateProgramDropdown(allData);
+    populateTypeFilter(allData);
+    render();
+  })
+  .catch(function (err) {
+    document.getElementById('updated-label').textContent = '';
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    box.textContent = 'Could not load ' + JSON_URL + ': ' + err.message;
+  });
+</script>
+</body>
+</html>

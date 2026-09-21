@@ -1,6 +1,6 @@
 ---
 name: eurofondy-website-brand
-description: Brand book / visual design system for the "EU Funds Slovakia" website in docs/ (index.html, projects.html, top_projects_chart.html, top_recipients_chart.html, styles.css). Use whenever creating or editing any file under docs/, adding a new dashboard/chart page, styling a table or filter UI, choosing colors or fonts for this project, or picking Chart.js colors for a new visualization — so new pages look like they belong to the same site instead of introducing an inconsistent one-off style.
+description: Brand book / visual design system for the "EU Funds Slovakia" website in docs/ (index.html, projects.html, top_projects_chart.html, regional_funding.html, beneficiaries.html, procurement.html, disbursements.html, styles.css). Use whenever creating or editing any file under docs/, adding a new dashboard/chart page, styling a table or filter UI, choosing colors or fonts for this project, or picking Chart.js colors for a new visualization — so new pages look like they belong to the same site instead of introducing an inconsistent one-off style.
 ---
 
 # EU Funds Slovakia — website brand book

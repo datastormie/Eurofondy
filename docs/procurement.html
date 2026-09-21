@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Procurement — Slovakia 2021–2027</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=4">
+<style>
+  .card { max-width: 1300px; }
+  table { min-width: 1200px; }
+  .chart-wrap { height: 420px; margin-bottom: 28px; }
+  @media (max-width: 480px) { table { min-width: 900px; } }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="index.html">
+    <svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#003399"/>
+      <g fill="#FFCC00">
+        <circle cx="12" cy="4" r="1.15"/><circle cx="18.5" cy="7.8" r="1.15"/><circle cx="18.5" cy="16.2" r="1.15"/>
+        <circle cx="12" cy="20" r="1.15"/><circle cx="5.5" cy="16.2" r="1.15"/><circle cx="5.5" cy="7.8" r="1.15"/>
+      </g>
+    </svg>
+    EU Funds Slovakia
+  </a>
+  <nav class="nav-links">
+    <a href="index.html">Programs</a>
+    <a href="projects.html">Projects</a>
+    <a href="top_projects_chart.html">Top 50 Projects</a>
+    <a href="regional_funding.html">Regional Funding</a>
+    <a href="beneficiaries.html">Beneficiaries</a>
+    <a class="current" href="procurement.html">Procurement</a>
+    <a href="disbursements.html">Disbursements</a>
+  </nav>
+</div>
+<div class="card">
+  <h1>Procurement &amp; Suppliers</h1>
+  <span class="title-rule"></span>
+  <p class="subtitle">Public-procurement contracts and who wins them</p>
+  <p class="updated" id="updated-label">Loading...</p>
+  <p class="hint">Tip: click a supplier bar (or search by name) to see every procurement procedure they've won below.</p>
+
+  <div class="chart-wrap"><canvas id="supplierChart"></canvas></div>
+
+  <div class="filters" style="grid-template-columns: 1fr 1fr;">
+    <div class="filter-group">
+      <label for="filterSupplier">Supplier</label>
+      <input type="text" id="filterSupplier" placeholder="Search by supplier...">
+    </div>
+    <div class="filter-group">
+      <label for="filterStatus">Procedure status</label>
+      <select id="filterStatus"><option value="">All statuses</option></select>
+    </div>
+    <div class="filters-actions">
+      <button class="btn-secondary" id="resetFilters">Reset filters</button>
+    </div>
+  </div>
+
+  <p class="error" style="display:none;" id="error-box"></p>
+
+  <h2 class="drilldown-title" id="supplierVoTitle" style="display:none;"></h2>
+  <div class="table-scroll drilldown-scroll" id="supplierVoWrap" style="display:none;">
+    <table id="supplierVoTable">
+      <thead>
+        <tr><th>Procedure</th><th>Status</th><th>CPV Category</th><th>Project</th><th>Program</th></tr>
+      </thead>
+      <tbody id="supplierVoBody"></tbody>
+    </table>
+  </div>
+
+  <div class="table-scroll">
+    <table id="dataTable" style="display:none;">
+      <thead>
+        <tr>
+          <th data-key="contract_nazov" data-type="string">Contract</th>
+          <th data-key="supplier_nazov" data-type="string">Supplier</th>
+          <th data-key="celkovasumazmluvy" data-type="number">Value (€)</th>
+          <th data-key="procurement_nazov" data-type="string">Procedure</th>
+          <th data-key="procurement_stav" data-type="string">Status</th>
+          <th data-key="project_nazov" data-type="string">Project</th>
+          <th data-key="program_skratka" data-type="string">Program</th>
+          <th data-key="url_zmluva" data-type="string">Document</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+    <p class="empty" id="emptyMessage" style="display:none;">No contracts match the current filters.</p>
+  </div>
+
+  <div class="pagination" id="pagination" style="display:none;">
+    <button id="prevPage">← Previous</button>
+    <span id="pageInfo"></span>
+    <button id="nextPage">Next →</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="projects_logic.js"></script>
+<script src="datamart_logic.js"></script>
+<script>
+const HAS_CHART = typeof Chart !== 'undefined';
+if (HAS_CHART) Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
+
+const JSON_URL = 'procurement_contracts_data.json';
+const PAGE_SIZE = 25;
+let allData = [];
+let currentPage = 1;
+let sortKey = 'celkovasumazmluvy';
+let sortDir = 'desc';
+
+function typeOf(key) {
+  const th = document.querySelector('th[data-key="' + key + '"]');
+  return th ? th.dataset.type : 'string';
+}
+
+function formatEUR(value) {
+  if (value == null || Number.isNaN(Number(value))) return '';
+  return '€' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function formatEURShort(value) {
+  if (value >= 1e9) return (value / 1e9).toFixed(2) + ' B';
+  if (value >= 1e6) return (value / 1e6).toFixed(1) + ' M';
+  if (value >= 1e3) return (value / 1e3).toFixed(0) + ' K';
+  return Number(value).toLocaleString();
+}
+
+function formatIsoDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function getFilters() {
+  return {
+    supplier: document.getElementById('filterSupplier').value.trim().toLowerCase(),
+    status: document.getElementById('filterStatus').value,
+  };
+}
+
+function applyFilters(data, filters) {
+  return data.filter(function (row) {
+    if (filters.supplier && !((row.supplier_nazov || '').toLowerCase().includes(filters.supplier))) return false;
+    if (filters.status && row.procurement_stav !== filters.status) return false;
+    return true;
+  });
+}
+
+function populateStatusFilter(data) {
+  const select = document.getElementById('filterStatus');
+  const statuses = Array.from(new Set(data.map(function (r) { return r.procurement_stav; }).filter(Boolean))).sort();
+  statuses.forEach(function (s) {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    select.appendChild(opt);
+  });
+}
+
+function renderChart(data) {
+  if (!HAS_CHART) return;
+  const grouped = DatamartLogic.groupSum(
+    data, function (r) { return r.supplier_ico || r.supplier_nazov; }, ['celkovasumazmluvy'],
+    function (r) { return r.supplier_nazov; }
+  ).slice(0, 20);
+
+  new Chart(document.getElementById('supplierChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: grouped.map(function (g) { return (g.label || '').length > 40 ? g.label.slice(0, 37) + '…' : g.label; }),
+      datasets: [{ label: 'Total contract value (€)', data: grouped.map(function (g) { return g.celkovasumazmluvy; }), backgroundColor: '#003399', borderRadius: 3 }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: function (evt, elements) {
+        if (elements.length > 0) {
+          document.getElementById('filterSupplier').value = grouped[elements[0].index].label || '';
+          currentPage = 1;
+          render();
+        }
+      },
+      onHover: function (evt, elements) { evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default'; },
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { callback: function (v) { return '€' + formatEURShort(v); } } } }
+    }
+  });
+}
+
+function renderSupplierVoRollup(filtered, supplierQuery) {
+  const wrap = document.getElementById('supplierVoWrap');
+  const title = document.getElementById('supplierVoTitle');
+  const tbody = document.getElementById('supplierVoBody');
+
+  if (!supplierQuery) {
+    wrap.style.display = 'none';
+    title.style.display = 'none';
+    return;
+  }
+
+  const vos = DatamartLogic.dedupeBy(filtered, function (r) { return r.procurement_id; });
+  title.textContent = 'Procurement procedures for "' + supplierQuery + '" (' + vos.length + ')';
+  title.style.display = 'block';
+  wrap.style.display = 'block';
+
+  tbody.innerHTML = '';
+  vos.forEach(function (row) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="wrap">' + escapeHtml(row.procurement_nazov || '') + '</td>' +
+      '<td>' + escapeHtml(row.procurement_stav || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.cpv_nazov || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.project_nazov || '') + '</td>' +
+      '<td>' + escapeHtml(row.program_skratka || '') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderTableRows(rows) {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  rows.forEach(function (row) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="wrap">' + escapeHtml(row.contract_nazov || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.supplier_nazov || '') + '</td>' +
+      '<td class="num">' + formatEUR(row.celkovasumazmluvy) + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.procurement_nazov || '') + '</td>' +
+      '<td>' + escapeHtml(row.procurement_stav || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.project_nazov || '') + '</td>' +
+      '<td>' + escapeHtml(row.program_skratka || '') + '</td>' +
+      '<td>' + (row.url_zmluva && /^https?:\/\//.test(row.url_zmluva) ? '<a href="' + escapeHtml(row.url_zmluva) + '" target="_blank" rel="noopener noreferrer">View</a>' : '') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderPaginationControls(pageResult) {
+  const pagination = document.getElementById('pagination');
+  const table = document.getElementById('dataTable');
+  const emptyMsg = document.getElementById('emptyMessage');
+  if (pageResult.totalRows === 0) {
+    table.style.display = 'none';
+    pagination.style.display = 'none';
+    emptyMsg.style.display = 'block';
+    return;
+  }
+  table.style.display = 'table';
+  emptyMsg.style.display = 'none';
+  pagination.style.display = 'flex';
+  document.getElementById('pageInfo').textContent =
+    'Showing ' + pageResult.start + '–' + pageResult.end + ' of ' + pageResult.totalRows +
+    ' (page ' + pageResult.page + ' of ' + pageResult.totalPages + ')';
+  document.getElementById('prevPage').disabled = pageResult.page <= 1;
+  document.getElementById('nextPage').disabled = pageResult.page >= pageResult.totalPages;
+}
+
+function render() {
+  const filters = getFilters();
+  const filtered = applyFilters(allData, filters);
+  renderSupplierVoRollup(filtered, filters.supplier);
+  const sorted = ProjectsLogic.sortData(filtered, sortKey, sortDir, typeOf);
+  const pageResult = ProjectsLogic.paginate(sorted, currentPage, PAGE_SIZE);
+  currentPage = pageResult.page;
+  renderTableRows(pageResult.rows);
+  renderPaginationControls(pageResult);
+}
+
+document.querySelectorAll('#dataTable th').forEach(function (th) {
+  th.addEventListener('click', function () {
+    const key = th.dataset.key;
+    if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortKey = key; sortDir = 'asc'; }
+    document.querySelectorAll('#dataTable th').forEach(function (t) { t.classList.remove('sorted-asc', 'sorted-desc'); });
+    th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    currentPage = 1;
+    render();
+  });
+});
+
+['filterSupplier', 'filterStatus'].forEach(function (id) {
+  document.getElementById(id).addEventListener('input', function () { currentPage = 1; render(); });
+  document.getElementById(id).addEventListener('change', function () { currentPage = 1; render(); });
+});
+document.getElementById('resetFilters').addEventListener('click', function () {
+  document.getElementById('filterSupplier').value = '';
+  document.getElementById('filterStatus').value = '';
+  currentPage = 1;
+  render();
+});
+document.getElementById('prevPage').addEventListener('click', function () { currentPage -= 1; render(); });
+document.getElementById('nextPage').addEventListener('click', function () { currentPage += 1; render(); });
+
+fetch(JSON_URL)
+  .then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  })
+  .then(function (payload) {
+    allData = payload.contracts;
+    document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
+    populateStatusFilter(allData);
+    renderChart(allData);
+    render();
+  })
+  .catch(function (err) {
+    document.getElementById('updated-label').textContent = '';
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    box.textContent = 'Could not load ' + JSON_URL + ': ' + err.message;
+  });
+</script>
+</body>
+</html>

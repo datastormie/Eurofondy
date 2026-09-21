@@ -14,7 +14,7 @@ You are a focused code reviewer whose only job is to verify that a `scripts/fetc
 - **Concurrency**: detail fetches run through `ThreadPoolExecutor(max_workers=MAX_WORKERS)` with `MAX_WORKERS = 8`, unless there's a stated reason to deviate.
 - **Dotted-path getter**: a `_get(d, "a.b.c")` helper identical in shape to the one in every other fetch script (walks nested dicts, returns `None` on any missing/None segment).
 - **Naming**: `TABLE_PREFIX = "itms21_"`, all table/column names lowercase. Child tables follow the `_t(bare_name)` pattern (`f"{TABLE_PREFIX}<entity>_{bare_name}"`), matching whatever exact DWH table names were specified for the endpoint (some endpoints have a DWH table name that doesn't match the URL entity name — that's expected, not a bug, as long as it matches the spec given for that endpoint).
-- **Schema setup**: connects with `duckdb.connect(str(DB_PATH))`, then `CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}` and `SET schema = '{DB_SCHEMA}'` (`DB_SCHEMA = "slovakia"` for almost everything; the two website-facing "current" tables use a separate `website` schema and are qualified as `website.<table>` everywhere they're referenced).
+- **Schema setup**: connects with `duckdb.connect(str(DB_PATH))`, then `CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}` and `SET schema = '{DB_SCHEMA}'` (`DB_SCHEMA = "slovakia"` for every fetch script — there is no separate "current"-table schema; the website-facing `datamart` schema is built independently by `scripts/build_datamart.py`, not by any fetch script).
 - **Gating / no re-fetch**: `get_known_ids(con)` reads existing primary keys before fetching; only ids missing from that set are fetched. Archetype #2/#3 tables are insert-once — `INSERT ... ON CONFLICT (id) DO NOTHING`, **no UPDATE path**. Only archetype #1 full-overwrite tables use `ON CONFLICT (...) DO UPDATE`.
 - **Periodic commit**: every 50 processed detail records (20 for a per-category loop) *and* after the final one — `if i % 50 == 0 or i == len(to_fetch): con.commit()`.
 - **Documentation**: `TABLE_COMMENTS` and `COLUMN_COMMENTS` dicts cover every table and column the script creates, applied via the shared `_esc()` / `apply_comments(con)` helpers (copied verbatim), called once right after `ensure_table`/`ensure_full_schema` in every function that opens a connection.
@@ -29,7 +29,7 @@ You are a focused code reviewer whose only job is to verify that a `scripts/fetc
 - Missing or incomplete `TABLE_COMMENTS`/`COLUMN_COMMENTS` entries for any table/column the script creates.
 - A script whose id source is another DuckDB table but has no existence guard for that source table.
 - A new script not present anywhere in `.github/workflows/monthly.yml`, or placed before a script it depends on.
-- A DuckDB-only script that adds a `docs/*_data.json` export (or a website-facing script missing one it should have).
+- A fetch script that adds a `docs/*_data.json` export or writes to the `datamart` schema — that's `scripts/build_datamart.py`'s job, not any individual fetch script's.
 - Table/column names that aren't lowercase or don't carry the `itms21_` prefix.
 
 ## How to review

@@ -14,10 +14,10 @@
   function applyFilters(data, filters) {
     return data.filter(function (row) {
       if (filters.kod) {
-        if (!(row.kod || '').toLowerCase().includes(filters.kod.toLowerCase())) return false;
+        if (!(row.project_kod || '').toLowerCase().includes(filters.kod.toLowerCase())) return false;
       }
       if (filters.nazov) {
-        if (!(row.nazov || '').toLowerCase().includes(filters.nazov.toLowerCase())) return false;
+        if (!(row.project_nazov || '').toLowerCase().includes(filters.nazov.toLowerCase())) return false;
       }
       if (filters.recipient) {
         if (!(row.prijimatel_nazov || '').toLowerCase().includes(filters.recipient.toLowerCase())) return false;
@@ -114,23 +114,7 @@
     }).sort(function (a, b) { return a.skratka.localeCompare(b.skratka); });
   }
 
-  function aggregateByRecipient(data) {
-    const map = new Map();
-    data.forEach(function (row) {
-      const key = row.prijimatel_nazov || 'Unknown';
-      if (!map.has(key)) {
-        map.set(key, { recipient: key, suma_eu: 0, suma_sr: 0, suma_spolu: 0, project_count: 0 });
-      }
-      const entry = map.get(key);
-      entry.suma_eu += Number(row.suma_eu) || 0;
-      entry.suma_sr += Number(row.suma_sr) || 0;
-      entry.suma_spolu += Number(row.suma_spolu) || 0;
-      entry.project_count += 1;
-    });
-    return Array.from(map.values()).sort(function (a, b) { return b.suma_spolu - a.suma_spolu; });
-  }
-
-  const api = { applyFilters, sortData, paginate, topNByAmount, distinctPrograms, aggregateByRecipient, PAGE_SIZE };
+  const api = { applyFilters, sortData, paginate, topNByAmount, distinctPrograms, PAGE_SIZE };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

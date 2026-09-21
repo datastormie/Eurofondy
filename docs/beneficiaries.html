@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beneficiaries — Slovakia 2021–2027</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=4">
+<style>
+  .card { max-width: 1300px; }
+  table { min-width: 1100px; }
+  .chart-wrap { height: 320px; margin-bottom: 28px; }
+  @media (max-width: 480px) { table { min-width: 900px; } }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="index.html">
+    <svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#003399"/>
+      <g fill="#FFCC00">
+        <circle cx="12" cy="4" r="1.15"/><circle cx="18.5" cy="7.8" r="1.15"/><circle cx="18.5" cy="16.2" r="1.15"/>
+        <circle cx="12" cy="20" r="1.15"/><circle cx="5.5" cy="16.2" r="1.15"/><circle cx="5.5" cy="7.8" r="1.15"/>
+      </g>
+    </svg>
+    EU Funds Slovakia
+  </a>
+  <nav class="nav-links">
+    <a href="index.html">Programs</a>
+    <a href="projects.html">Projects</a>
+    <a href="top_projects_chart.html">Top 50 Projects</a>
+    <a href="regional_funding.html">Regional Funding</a>
+    <a class="current" href="beneficiaries.html">Beneficiaries</a>
+    <a href="procurement.html">Procurement</a>
+    <a href="disbursements.html">Disbursements</a>
+  </nav>
+</div>
+<div class="card">
+  <h1>Beneficiaries</h1>
+  <span class="title-rule"></span>
+  <p class="subtitle">Every entity that has received EU funding, with legal form and sector</p>
+  <p class="updated" id="updated-label">Loading...</p>
+  <p class="hint">Tip: click a beneficiary's name to see their full project list, or their ICO to open their FinStat company profile in a new tab.</p>
+
+  <div class="chart-wrap"><canvas id="legalFormChart"></canvas></div>
+
+  <div class="filters" style="grid-template-columns: 1fr 1fr;">
+    <div class="filter-group">
+      <label for="filterName">Name or ICO</label>
+      <input type="text" id="filterName" placeholder="Search...">
+    </div>
+    <div class="filter-group">
+      <label for="filterLegalForm">Legal form</label>
+      <select id="filterLegalForm"><option value="">All legal forms</option></select>
+    </div>
+  </div>
+
+  <p class="error" style="display:none;" id="error-box"></p>
+
+  <div class="table-scroll">
+    <table id="dataTable" style="display:none;">
+      <thead>
+        <tr>
+          <th data-key="nazov" data-type="string">Name</th>
+          <th data-key="ico" data-type="string">ICO</th>
+          <th data-key="pravnaforma_nazov" data-type="string">Legal Form</th>
+          <th data-key="primary_sector" data-type="string">Primary Sector</th>
+          <th data-key="project_count" data-type="number">Projects</th>
+          <th data-key="suma_eu" data-type="number">EU (€)</th>
+          <th data-key="suma_sr" data-type="number">SR (€)</th>
+          <th data-key="suma_spolu" data-type="number">Total (€)</th>
+          <th data-key="first_project_year" data-type="number">First Year</th>
+          <th data-key="last_project_year" data-type="number">Last Year</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+    <p class="empty" id="emptyMessage" style="display:none;">No beneficiaries match the current filters.</p>
+  </div>
+
+  <div class="pagination" id="pagination" style="display:none;">
+    <button id="prevPage">← Previous</button>
+    <span id="pageInfo"></span>
+    <button id="nextPage">Next →</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="projects_logic.js"></script>
+<script src="datamart_logic.js"></script>
+<script>
+const HAS_CHART = typeof Chart !== 'undefined';
+if (HAS_CHART) Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
+
+const JSON_URL = 'beneficiary_funding_data.json';
+const PAGE_SIZE = 25;
+let allData = [];
+let currentPage = 1;
+let sortKey = 'suma_spolu';
+let sortDir = 'desc';
+
+function typeOf(key) {
+  const th = document.querySelector('th[data-key="' + key + '"]');
+  return th ? th.dataset.type : 'string';
+}
+
+function formatEUR(value) {
+  if (value == null || Number.isNaN(Number(value))) return '';
+  return '€' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function formatEURShort(value) {
+  if (value >= 1e9) return (value / 1e9).toFixed(2) + ' B';
+  if (value >= 1e6) return (value / 1e6).toFixed(1) + ' M';
+  if (value >= 1e3) return (value / 1e3).toFixed(0) + ' K';
+  return Number(value).toLocaleString();
+}
+
+function formatIsoDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function recipientLink(nazov) {
+  return '<a href="projects.html?recipient=' + encodeURIComponent(nazov) + '">' + escapeHtml(nazov) + '</a>';
+}
+
+function icoLink(ico) {
+  if (!ico) return '';
+  const safe = escapeHtml(ico);
+  return '<a href="https://finstat.sk/' + encodeURIComponent(ico) + '" target="_blank" rel="noopener noreferrer">' + safe + '</a>';
+}
+
+function getFilters() {
+  return {
+    name: document.getElementById('filterName').value.trim().toLowerCase(),
+    legalForm: document.getElementById('filterLegalForm').value,
+  };
+}
+
+function applyFilters(data, filters) {
+  return data.filter(function (row) {
+    if (filters.name) {
+      const hay = ((row.nazov || '') + ' ' + (row.ico || '')).toLowerCase();
+      if (!hay.includes(filters.name)) return false;
+    }
+    if (filters.legalForm && row.pravnaforma_nazov !== filters.legalForm) return false;
+    return true;
+  });
+}
+
+function populateLegalFormFilter(data) {
+  const select = document.getElementById('filterLegalForm');
+  const forms = Array.from(new Set(data.map(function (r) { return r.pravnaforma_nazov; }).filter(Boolean))).sort();
+  forms.forEach(function (f) {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.textContent = f;
+    select.appendChild(opt);
+  });
+}
+
+function renderChart(data) {
+  if (!HAS_CHART) return;
+  const grouped = DatamartLogic.groupSum(data, function (r) { return r.pravnaforma_nazov || 'Unknown'; }, ['suma_spolu']).slice(0, 10);
+  new Chart(document.getElementById('legalFormChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: grouped.map(function (g) { return g.key; }),
+      datasets: [{ label: 'Total funding (€)', data: grouped.map(function (g) { return g.suma_spolu; }), backgroundColor: '#003399', borderRadius: 3 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return '€' + formatEURShort(v); } } } }
+    }
+  });
+}
+
+function renderTableRows(rows) {
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  rows.forEach(function (row) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="wrap">' + recipientLink(row.nazov || '') + '</td>' +
+      '<td>' + icoLink(row.ico) + '</td>' +
+      '<td>' + escapeHtml(row.pravnaforma_nazov || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.primary_sector || '') + '</td>' +
+      '<td class="num">' + (row.project_count || 0) + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_eu) + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_sr) + '</td>' +
+      '<td class="num">' + formatEUR(row.suma_spolu) + '</td>' +
+      '<td class="num">' + (row.first_project_year || '') + '</td>' +
+      '<td class="num">' + (row.last_project_year || '') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderPaginationControls(pageResult) {
+  const pagination = document.getElementById('pagination');
+  const table = document.getElementById('dataTable');
+  const emptyMsg = document.getElementById('emptyMessage');
+  if (pageResult.totalRows === 0) {
+    table.style.display = 'none';
+    pagination.style.display = 'none';
+    emptyMsg.style.display = 'block';
+    return;
+  }
+  table.style.display = 'table';
+  emptyMsg.style.display = 'none';
+  pagination.style.display = 'flex';
+  document.getElementById('pageInfo').textContent =
+    'Showing ' + pageResult.start + '–' + pageResult.end + ' of ' + pageResult.totalRows +
+    ' (page ' + pageResult.page + ' of ' + pageResult.totalPages + ')';
+  document.getElementById('prevPage').disabled = pageResult.page <= 1;
+  document.getElementById('nextPage').disabled = pageResult.page >= pageResult.totalPages;
+}
+
+function render() {
+  const filtered = applyFilters(allData, getFilters());
+  const sorted = ProjectsLogic.sortData(filtered, sortKey, sortDir, typeOf);
+  const pageResult = ProjectsLogic.paginate(sorted, currentPage, PAGE_SIZE);
+  currentPage = pageResult.page;
+  renderTableRows(pageResult.rows);
+  renderPaginationControls(pageResult);
+}
+
+document.querySelectorAll('th').forEach(function (th) {
+  th.addEventListener('click', function () {
+    const key = th.dataset.key;
+    if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortKey = key; sortDir = 'asc'; }
+    document.querySelectorAll('th').forEach(function (t) { t.classList.remove('sorted-asc', 'sorted-desc'); });
+    th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    currentPage = 1;
+    render();
+  });
+});
+
+['filterName', 'filterLegalForm'].forEach(function (id) {
+  document.getElementById(id).addEventListener('input', function () { currentPage = 1; render(); });
+  document.getElementById(id).addEventListener('change', function () { currentPage = 1; render(); });
+});
+document.getElementById('prevPage').addEventListener('click', function () { currentPage -= 1; render(); });
+document.getElementById('nextPage').addEventListener('click', function () { currentPage += 1; render(); });
+
+fetch(JSON_URL)
+  .then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  })
+  .then(function (payload) {
+    allData = payload.beneficiaries;
+    document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
+    populateLegalFormFilter(allData);
+    renderChart(allData);
+    render();
+  })
+  .catch(function (err) {
+    document.getElementById('updated-label').textContent = '';
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    box.textContent = 'Could not load ' + JSON_URL + ': ' + err.message;
+  });
+</script>
+</body>
+</html>
