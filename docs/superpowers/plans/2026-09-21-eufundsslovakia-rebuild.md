@@ -21,6 +21,7 @@ Verified SQL reference: `docs/superpowers/specs/project_funding.sql`
 - Reuse `docs/projects_logic.js` generic helpers (`sortData`, `paginate`, `topNByAmount`, `distinctPrograms`) via `<script src="projects_logic.js">` rather than reimplementing.
 - Every page's shared nav (`.nav-links`) has exactly these 7 links, in this order: Programs, Projects, Top 50 Projects, Regional Funding, Beneficiaries, Procurement, Disbursements.
 - Cross-device: every rebuilt/new page must be checked at ~390px, ~768px, ~1440px widths with no page-level horizontal overflow (tables may scroll internally via `.table-scroll`).
+- All `datamart.*` JSON exports are written compact (no `indent=2`) — measured on the largest export (payment_disbursements, 22,970 rows): pretty-printed was 11.5MB/1.43MB gzip vs. compact 9.2MB/1.36MB gzip, a free size win with zero frontend changes (still one `fetch().then(r=>r.json())`, still native JSON types). CSV was considered (would gzip to ~1.07MB) and rejected: this data is free-text Slovak with commas/quotes, so a hand-rolled CSV parser is real new error surface, and it would break the one-JSON-fetch convention every existing page shares.
 
 ---
 
@@ -614,7 +615,7 @@ def export_mart(con: duckdb.DuckDBPyConnection, table: str, json_filename: str,
         json_key: json.loads(df.to_json(orient="records", date_format="iso")),
     }
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(export, f, ensure_ascii=False, indent=2)
+        json.dump(export, f, ensure_ascii=False)
     print(f"Exported {len(df)} rows to {out_path}")
 
 
