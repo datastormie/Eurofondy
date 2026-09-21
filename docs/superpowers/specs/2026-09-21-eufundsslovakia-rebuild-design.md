@@ -90,17 +90,29 @@ links, `top_recipients_chart.html` removed.
 
 ## Slovakia choropleth map
 
-A small public-domain SVG of the 8 kraj boundaries (sourced from Wikimedia
-Commons, simplified) is added as `docs/assets/slovakia_kraje.svg`, inlined
-directly in `regional_funding.html` (not `<img>`, so JS can reach into it).
-Each region `<path>` gets `id="kraj-{nuts3_id}"`; on data load, JS sets
-`fill` per path via a sequential color scale (reusing the existing gold/navy
-brand palette — light-to-dark navy) driven by `regional_summary.suma_spolu`,
-with a legend and hover tooltip showing the exact amount + project count.
-Clicking a region behaves like the existing bar-chart click handler from the
-superseded design (shows that region's project drill-down table). The
-8-region requirement is fixed (Slovakia's kraje don't change), so the SVG is
-a one-time static asset, not generated.
+`docs/assets/slovakia_kraje.svg` holds the 8 kraj boundaries as real
+geographic `<path>` shapes (not a schematic tile grid — see history below),
+inlined directly in `regional_funding.html` (not `<img>`, so JS can reach
+into it). Each region `<path>` gets `id="kraj-{nuts3_id}"`; on data load, JS
+sets `fill` per path via a sequential color scale (reusing the existing
+gold/navy brand palette — light-to-dark navy) driven by
+`regional_summary.suma_spolu`, with a legend and hover tooltip showing the
+exact amount + project count. Clicking a region behaves like the existing
+bar-chart click handler from the superseded design (shows that region's
+project drill-down table). The 8-region requirement is fixed (Slovakia's
+kraje don't change), so the SVG is a one-time static asset, not generated.
+
+**History**: the original implementation plan deliberately shipped a
+simplified 8-tile schematic (not a traced boundary) to avoid the complexity
+of sourcing/simplifying real geodata during that task. It was later upgraded
+to real boundaries: administrative boundary data for Slovakia's 8 kraje
+(ADM1) was pulled from geoBoundaries.org (CC-BY 4.0 / ODbL, sourced from
+OpenStreetMap), simplified with Ramer–Douglas–Peucker (≈0.006° tolerance,
+~6,242 → ~1,470 total points across all 8 regions) to keep the SVG small,
+and projected with a simple equirectangular projection (longitude scaled by
+`cos(mean_latitude)` to avoid east–west stretching) — no mapping library or
+new frontend dependency added. Region ids/classes are unchanged, so this was
+a drop-in asset swap with no JS changes to the render/click/tooltip logic.
 
 ## Migration & cleanup
 

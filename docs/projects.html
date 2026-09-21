@@ -123,7 +123,6 @@
             <th data-key="program_nazov" data-type="string">Program Name</th>
             <th data-key="prijimatel_nazov" data-type="string">Recipient</th>
             <th data-key="prijimatel_ico" data-type="string">ICO</th>
-            <th data-key="kraj_names" data-type="string">Regions</th>
             <th data-key="stav" data-type="string">Status</th>
             <th data-key="vrealizacii" data-type="bool">In Progress</th>
             <th data-key="ukonceny" data-type="bool">Completed</th>
@@ -278,7 +277,6 @@ function renderTableRows(rows) {
       '<td class="wrap">' + (row.program_nazov || '') + '</td>' +
       '<td class="wrap">' + (row.prijimatel_nazov || '') + '</td>' +
       '<td>' + formatIcoLink(row.prijimatel_ico) + '</td>' +
-      '<td class="wrap">' + (row.kraj_names || '') + '</td>' +
       '<td>' + (row.stav || '') + '</td>' +
       '<td>' + (row.vrealizacii ? 'Yes' : 'No') + '</td>' +
       '<td>' + (row.ukonceny ? 'Yes' : 'No') + '</td>' +
