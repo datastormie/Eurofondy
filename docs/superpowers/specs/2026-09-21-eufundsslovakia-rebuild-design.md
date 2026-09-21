@@ -124,6 +124,29 @@ a one-time static asset, not generated.
   `payment_disbursements_data.json`); `scripts/build_datamart.py` runs last,
   after every fetch script.
 
+## Cross-device compatibility
+
+The existing brand system already has a responsive baseline (breakpoints at
+1024px/768px/480px in `docs/styles.css`, `.table-scroll` for wide tables) —
+every rebuilt/new page reuses it unchanged. Two new elements have no
+existing responsive precedent and need explicit handling:
+
+- **Charts** (`.chart-wrap`, Chart.js `responsive: true` /
+  `maintainAspectRatio: false`): already the pattern used by
+  `top_projects_chart.html`; new charts (program volumes, top suppliers,
+  disbursement trend) follow it, with a shorter `.chart-wrap` height at the
+  768px breakpoint like the superseded design's own precedent.
+- **SVG choropleth**: the inlined SVG uses a `viewBox` and scales to its
+  container width (no fixed pixel width/height on the `<svg>` itself), so it
+  shrinks with `.card` down to phone width; the legend and hover tooltip
+  reflow beneath it rather than beside it under 768px. Touch devices get
+  tap-to-select on a region path (same handler as click) since hover
+  tooltips don't work on touch.
+
+Multi-select filter dropdowns (`.multiselect`) and drill-down tables already
+collapse acceptably on mobile in the current site — no changes needed there
+beyond reusing the existing classes.
+
 ## Verification
 
 - `python scripts/build_datamart.py` runs clean against the local DB and
@@ -133,6 +156,10 @@ a one-time static asset, not generated.
   resolve, every chart renders, every drill-down populates, the Finstat link
   opens `finstat.sk/<ico>` in a new tab, the choropleth recolors on load and
   is clickable.
+- Check every page at 3 widths (e.g. via browser devtools device toolbar):
+  ~390px (phone), ~768px (tablet), ~1440px (desktop) — nav, charts, the
+  choropleth, and tables all stay usable with no horizontal overflow of the
+  page itself (tables may internally scroll via `.table-scroll`).
 - Sanity-check `program_summary.zazmluvnene_spolu` summed across all
   programmes against `regional_funding`'s grand total (should match exactly,
   same source).
