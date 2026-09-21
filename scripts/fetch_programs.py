@@ -8,14 +8,11 @@ deleted.
 Run monthly via GitHub Actions (.github/workflows/monthly.yml).
 """
 
-import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
-import pandas as pd
 import requests
 
 API_URL = "https://api.itms21.sk/public/v1/program?limit=-1"
@@ -192,14 +189,6 @@ def apply_comments(con: duckdb.DuckDBPyConnection) -> None:
     for table, columns in COLUMN_COMMENTS.items():
         for column, comment in columns.items():
             con.execute(f"COMMENT ON COLUMN {table}.{column} IS '{_esc(comment)}'")
-
-
-def _has_primary_key(con: duckdb.DuckDBPyConnection, schema: str, table: str) -> bool:
-    return con.execute(
-        "SELECT 1 FROM duckdb_constraints() WHERE schema_name = ? AND table_name = ? "
-        "AND constraint_type = 'PRIMARY KEY'",
-        [schema, table],
-    ).fetchone() is not None
 
 
 def ensure_full_schema(con: duckdb.DuckDBPyConnection) -> None:
