@@ -55,7 +55,7 @@ if (HAS_CHART) {
   Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
 }
 
-const JSON_URL = 'project_data.json';
+const JSON_URL = 'regional_funding_data.json';
 
 function formatIsoDate(iso) {
   const d = new Date(iso);
@@ -87,13 +87,13 @@ function renderTopChart(data) {
   // so keeping top50 sorted descending (largest first) puts the most expensive project at the top.
   const ordered = top50;
 
-  const codes = ordered.map(function (p) { return p.kod || ''; });
+  const codes = ordered.map(function (p) { return p.project_kod || ''; });
 
   const labels = ordered.map(function (p) {
-    const name = p.nazov || p.kod || ('#' + p.project_id);
+    const name = p.project_nazov || p.project_kod || ('#' + p.project_id);
     return name.length > 55 ? name.slice(0, 52) + '…' : name;
   });
-  const fullNames = ordered.map(function (p) { return p.nazov || ''; });
+  const fullNames = ordered.map(function (p) { return p.project_nazov || ''; });
   const programs = ordered.map(function (p) { return p.program_skratka || ''; });
   const programNames = ordered.map(function (p) { return p.program_nazov || ''; });
   const srAmounts = ordered.map(function (p) { return p.suma_sr || 0; });
@@ -164,7 +164,7 @@ fetch(JSON_URL)
     return response.json();
   })
   .then(function (payload) {
-    const data = payload.projects;
+    const data = payload.regional_funding;
     document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
     renderTopChart(data);
   })
