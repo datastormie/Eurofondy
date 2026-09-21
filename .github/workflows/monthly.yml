@@ -59,6 +59,7 @@ jobs:
           python scripts/fetch_verejneobstaravanie.py
           python scripts/fetch_zmluvyverejnehoobstaravania.py
           python scripts/fetch_dodavatelobstaravatel.py
+          python scripts/build_datamart.py
 
       - name: Save DuckDB store to release
         env:
@@ -74,6 +75,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/program_data.json docs/project_data.json
+          git add docs/regional_funding_data.json docs/regional_summary_data.json docs/program_summary_data.json docs/beneficiary_funding_data.json docs/procurement_contracts_data.json docs/payment_disbursements_data.json
           git diff --staged --quiet || git commit -m "Update program/project data $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
