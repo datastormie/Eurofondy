@@ -469,7 +469,7 @@ def export_mart(con: duckdb.DuckDBPyConnection, table: str, json_filename: str,
         json_key: json.loads(df.to_json(orient="records", date_format="iso")),
     }
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(export, f, ensure_ascii=False, indent=2)
+        json.dump(export, f, ensure_ascii=False)
     print(f"Exported {len(df)} rows to {out_path}")
 
 
