@@ -14,10 +14,10 @@
   function applyFilters(data, filters) {
     return data.filter(function (row) {
       if (filters.kod) {
-        if (!(row.kod || '').toLowerCase().includes(filters.kod.toLowerCase())) return false;
+        if (!(row.project_kod || '').toLowerCase().includes(filters.kod.toLowerCase())) return false;
       }
       if (filters.nazov) {
-        if (!(row.nazov || '').toLowerCase().includes(filters.nazov.toLowerCase())) return false;
+        if (!(row.project_nazov || '').toLowerCase().includes(filters.nazov.toLowerCase())) return false;
       }
       if (filters.recipient) {
         if (!(row.prijimatel_nazov || '').toLowerCase().includes(filters.recipient.toLowerCase())) return false;
