@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
 <style>
   .chart-section { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--hairline); }
   .scale-toggle { text-align: center; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
@@ -168,6 +168,25 @@ function renderChart(data) {
         { label: 'National (SR) contribution', data: sorted.map(function(d) { return d.zazmluvnene_sr; }), backgroundColor: '#7C93C7', borderRadius: 3 }
       ];
 
+  const yScaleType = chartMetric === 'count' ? 'linear' : document.querySelector('input[name="scale"]:checked').value;
+  const yScale = {
+    stacked: chartMetric !== 'count',
+    type: yScaleType,
+    beginAtZero: true,
+    ticks: {
+      callback: function(value) {
+        return chartMetric === 'count' ? value : '€' + formatEURShort(value);
+      }
+    },
+    title: { display: true, text: chartMetric === 'count' ? 'Projects' : 'EUR' }
+  };
+  // Re-apply the log-scale floor here too — the scale-toggle's own change
+  // listener only sets `min` on the already-built chart, so switching the
+  // metric (which rebuilds the chart from scratch) would otherwise lose it.
+  if (chartMetric !== 'count' && yScaleType === 'logarithmic') {
+    yScale.min = 1e6;
+  }
+
   fundingChart = new Chart(ctx, {
     type: 'bar',
     data: { labels: labels, datasets: datasets },
@@ -192,17 +211,7 @@ function renderChart(data) {
       },
       scales: {
         x: { stacked: chartMetric !== 'count' },
-        y: {
-          stacked: chartMetric !== 'count',
-          type: chartMetric === 'count' ? 'linear' : document.querySelector('input[name="scale"]:checked').value,
-          beginAtZero: true,
-          ticks: {
-            callback: function(value) {
-              return chartMetric === 'count' ? value : '€' + formatEURShort(value);
-            }
-          },
-          title: { display: true, text: chartMetric === 'count' ? 'Projects' : 'EUR' }
-        }
+        y: yScale
       }
     }
   });

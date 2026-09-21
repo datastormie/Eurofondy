@@ -237,7 +237,7 @@ function renderTableRows(rows) {
       '<td>' + escapeHtml(row.procurement_stav || '') + '</td>' +
       '<td class="wrap">' + escapeHtml(row.project_nazov || '') + '</td>' +
       '<td>' + escapeHtml(row.program_skratka || '') + '</td>' +
-      '<td>' + (row.url_zmluva ? '<a href="' + escapeHtml(row.url_zmluva) + '" target="_blank" rel="noopener noreferrer">View</a>' : '') + '</td>';
+      '<td>' + (row.url_zmluva && /^https?:\/\//.test(row.url_zmluva) ? '<a href="' + escapeHtml(row.url_zmluva) + '" target="_blank" rel="noopener noreferrer">View</a>' : '') + '</td>';
     tbody.appendChild(tr);
   });
 }
@@ -273,12 +273,12 @@ function render() {
   renderPaginationControls(pageResult);
 }
 
-document.querySelectorAll('th').forEach(function (th) {
+document.querySelectorAll('#dataTable th').forEach(function (th) {
   th.addEventListener('click', function () {
     const key = th.dataset.key;
     if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     else { sortKey = key; sortDir = 'asc'; }
-    document.querySelectorAll('th').forEach(function (t) { t.classList.remove('sorted-asc', 'sorted-desc'); });
+    document.querySelectorAll('#dataTable th').forEach(function (t) { t.classList.remove('sorted-asc', 'sorted-desc'); });
     th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
     currentPage = 1;
     render();

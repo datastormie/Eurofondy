@@ -82,6 +82,10 @@ REGIONAL_FUNDING_SQL = f"""
         p.createdat AS created_at,
         p.updatedat AS updated_at
     FROM {SLOVAKIA_SCHEMA}.itms21_projekt p
+    -- INNER JOIN: a project with zero Slovak location rows would silently
+    -- disappear from regional_funding (and projects.html/top_projects_chart.html)
+    -- entirely. Currently every project has >=1 such row; if that ever
+    -- changes, consider a LEFT JOIN with a "Nezaradené" (unassigned) fallback.
     JOIN region_agg ra ON ra.project_id = p.id
     LEFT JOIN {SLOVAKIA_SCHEMA}.itms21_program prog ON prog.id = p.program_id
     LEFT JOIN {SLOVAKIA_SCHEMA}.itms21_subjekt ben ON ben.id = p.prijimatel_id

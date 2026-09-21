@@ -109,6 +109,14 @@ function formatEURShort(value) {
   return Number(value).toLocaleString();
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function updateProgramToggleLabel() {
   const label = document.getElementById('programToggleLabel');
   const count = selectedPrograms.size;
@@ -126,7 +134,7 @@ function populateProgramDropdown(data) {
     const wrap = document.createElement('label');
     wrap.className = 'ms-option';
     wrap.title = p.nazov || p.skratka;
-    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + p.skratka + '"><span>' + p.skratka + '</span>';
+    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + escapeHtml(p.skratka) + '"><span>' + escapeHtml(p.skratka) + '</span>';
     const cb = wrap.querySelector('input');
     cb.addEventListener('change', function () {
       if (cb.checked) selectedPrograms.add(p.skratka);
@@ -153,12 +161,12 @@ function renderDrilldown(nuts3Id, krajNazov) {
   sorted.forEach(function (row) {
     const tr = document.createElement('tr');
     tr.innerHTML =
-      '<td>' + (row.project_kod || '') + '</td>' +
-      '<td class="wrap">' + (row.project_nazov || '') + '</td>' +
-      '<td>' + (row.program_skratka || '') + '</td>' +
-      '<td class="wrap">' + (row.prijimatel_nazov || '') + '</td>' +
+      '<td>' + escapeHtml(row.project_kod || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.project_nazov || '') + '</td>' +
+      '<td>' + escapeHtml(row.program_skratka || '') + '</td>' +
+      '<td class="wrap">' + escapeHtml(row.prijimatel_nazov || '') + '</td>' +
       '<td class="num">' + formatEUR(row.suma_spolu) + '</td>' +
-      '<td>' + (row.stav || '') + '</td>';
+      '<td>' + escapeHtml(row.stav || '') + '</td>';
     tbody.appendChild(tr);
   });
 }
@@ -201,7 +209,10 @@ function render() {
   }
 
   const values = byRegion.map(function (r) { return r.suma_spolu; });
-  const min = values.length ? Math.min.apply(null, values) : 0;
+  // Anchor min at 0 (not the smallest present value) so a lone funded region
+  // doesn't render as the lightest shade, and an unfunded region (value 0)
+  // never produces a negative interpolation fraction in colorForValue.
+  const min = 0;
   const max = values.length ? Math.max.apply(null, values) : 0;
   document.getElementById('legendMin').textContent = '€' + formatEURShort(min);
   document.getElementById('legendMax').textContent = '€' + formatEURShort(max);
@@ -221,7 +232,12 @@ function render() {
     shape.setAttribute('role', 'button');
     shape.setAttribute('aria-label', krajNazov + ': €' + Number(value).toLocaleString());
     shape.onkeydown = function (evt) { if (evt.key === 'Enter' || evt.key === ' ') shape.onclick(); };
-    shape.onmousemove = function (evt) { shape.setAttribute('title', krajNazov + ': €' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })); };
+    let titleEl = shape.querySelector('title');
+    if (!titleEl) {
+      titleEl = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      shape.appendChild(titleEl);
+    }
+    titleEl.textContent = krajNazov + ': €' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
   });
 }
 

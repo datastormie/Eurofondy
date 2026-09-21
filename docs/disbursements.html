@@ -173,7 +173,7 @@ function populateProgramDropdown(data) {
     const wrap = document.createElement('label');
     wrap.className = 'ms-option';
     wrap.title = p.nazov || p.skratka;
-    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + p.skratka + '"><span>' + p.skratka + '</span>';
+    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + escapeHtml(p.skratka) + '"><span>' + escapeHtml(p.skratka) + '</span>';
     const cb = wrap.querySelector('input');
     cb.addEventListener('change', function () {
       if (cb.checked) selectedPrograms.add(p.skratka);

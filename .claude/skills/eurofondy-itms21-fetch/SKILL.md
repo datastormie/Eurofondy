@@ -1,20 +1,20 @@
 ---
 name: eurofondy-itms21-fetch
-description: Conventions for writing or modifying a scripts/fetch_*.py script that pulls data from the ITMS21 public API (api.itms21.sk) into data/eufunds.duckdb (mostly the `slovakia` schema, with the two website-facing "current" tables in a separate `website` schema). Use this whenever adding a new ITMS21 endpoint, adding a new field/child-table to an existing fetch script, debugging why a fetch script re-fetches or duplicates rows, or wiring a new script into .github/workflows/monthly.yml. Also use when the user mentions ITMS21, DuckDB sync scripts, or "fetch script" in this repo, even if they don't name a specific file.
+description: Conventions for writing or modifying a scripts/fetch_*.py script that pulls data from the ITMS21 public API (api.itms21.sk) into data/eufunds.duckdb (the `slovakia` schema; the website-facing `datamart` schema is built separately by scripts/build_datamart.py, not by fetch scripts). Use this whenever adding a new ITMS21 endpoint, adding a new field/child-table to an existing fetch script, debugging why a fetch script re-fetches or duplicates rows, or wiring a new script into .github/workflows/monthly.yml. Also use when the user mentions ITMS21, DuckDB sync scripts, or "fetch script" in this repo, even if they don't name a specific file.
 ---
 
 # Eurofondy ITMS21 fetch scripts
 
 All `scripts/fetch_*.py` files pull from `https://api.itms21.sk/public/v1/...` into
-one shared DuckDB file, `data/eufunds.duckdb`. Almost all tables live in the
-`slovakia` schema (each script sets `DB_SCHEMA = "slovakia"` and runs `CREATE
-SCHEMA IF NOT EXISTS` + `SET schema = ...` right after connecting — copy this on
-every new script too). The two tables that back the live website
-(`itms21_programs_current` in `fetch_programs.py`, `itms21_projects_current` in
-`fetch_projects.py`) instead live in a dedicated `website` schema — each of
-those scripts also sets `WEBSITE_SCHEMA = "website"`, qualifies that one table
-as `website.<table>` everywhere it's referenced, and keeps every other table it
-owns in `slovakia`. They are run monthly by
+one shared DuckDB file, `data/eufunds.duckdb`. Every table a fetch script
+creates lives in the `slovakia` schema (each script sets `DB_SCHEMA =
+"slovakia"` and runs `CREATE SCHEMA IF NOT EXISTS` + `SET schema = ...` right
+after connecting — copy this on every new script too). The website-facing
+`datamart` schema (`regional_funding`, `regional_summary`, `program_summary`,
+`beneficiary_funding`, `procurement_contracts`, `payment_disbursements`) is
+built separately by `scripts/build_datamart.py` from the `slovakia` tables —
+fetch scripts never write to `datamart` and never need a "current state"
+table of their own. They are run monthly by
 `.github/workflows/monthly.yml`, in a fixed order (roughly: programs → projects →
 ciselniky → vyzvy → planovanavyzvy → priorita → specifickycielprogramu → opatrenie
 → typakcieprogramu → zonfp → zop → aktivitaprojekt). Every script is independent
@@ -45,9 +45,9 @@ instead of fighting the block.
 
 1. **Full-overwrite, flat table** — small list endpoint (tens/hundreds of rows),
    no separate detail endpoint, whole list re-fetched every run.
-   Example: `fetch_programs.py` (`itms21_programs_current`).
+   Example: `fetch_organimplementaciefondov.py` (`itms21_organimplementaciefondov`).
    Existing rows are always **UPDATE**d with fresh data; nothing is ever deleted.
-   Feeds a `docs/*_data.json` export because the website shows "live" totals.
+   DuckDB-only — see the JSON-export note below.
 
 2. **Incremental additive, flat detail table** — list endpoint returns ids only;
    a separate `/id/{id}` detail endpoint returns one flat record (no nested
@@ -106,11 +106,13 @@ instead of fighting the block.
    for every nested field before writing the column mapping, don't infer
    the shape from a single example.
 
-Only archetypes #1 and #3-with-a-flat-summary-row (`fetch_projects.py` is
-actually #1 + #3 combined — a `projects_current` summary table for the website,
-*and* the full normalized schema for DuckDB querying) produce a
-`docs/*_data.json` export + website page. Everything else is **DuckDB-only** —
-don't add a JSON export or website page unless the user asks for one.
+No fetch script produces a `docs/*_data.json` export or website page anymore
+— every fetch script is **DuckDB-only**, writing purely-additive tables into
+the `slovakia` schema. The website is instead fed by `scripts/build_datamart.py`,
+which reads from `slovakia` tables (including `itms21_program` and
+`itms21_projekt`) and builds the derived `datamart` schema + its own JSON
+exports. Don't add a JSON export to a fetch script — that's build_datamart.py's
+job, not any individual fetch script's.
 
 ## Shared building blocks (copy these, don't reinvent)
 
