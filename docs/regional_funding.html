@@ -238,6 +238,8 @@ function render() {
       shape.appendChild(titleEl);
     }
     titleEl.textContent = krajNazov + ': €' + Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    const sumEl = document.getElementById('kraj-sum-' + nuts3Id);
+    if (sumEl) sumEl.textContent = '€' + formatEURShort(value);
   });
 }
 

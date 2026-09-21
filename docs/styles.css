@@ -401,11 +401,21 @@ tr:hover td:nth-child(1), tr:hover td:nth-child(2) { background: #f2f5fb; }
   dominant-baseline: middle;
   pointer-events: none;
 }
+.kraj-label-sum {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  fill: #ffffff;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
 .kraj-legend { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; margin-bottom: 28px; font-size: 12px; color: var(--muted); }
 .kraj-legend-scale { width: 160px; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #cfd9f0, #003399); }
 
 @media (max-width: 768px) {
   .kraj-label { font-size: 11px; }
+  .kraj-label-sum { font-size: 8px; }
 }
 
 /* ---------- Chart pages ---------- */
