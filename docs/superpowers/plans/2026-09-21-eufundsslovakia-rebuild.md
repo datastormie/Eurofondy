@@ -1030,7 +1030,7 @@ const filtered = DatamartLogic.filterByProgram(
 assert.strictEqual(filtered.length, 1);
 
 assert.strictEqual(DatamartLogic.monthKey('2026-03-15T10:00:00.000Z'), '2026-03');
-assert.strictEqual(DatamartLogic.monthKey(1741996800000), '2026-03');
+assert.strictEqual(DatamartLogic.monthKey(1741996800000), '2025-03');
 
 console.log('datamart_logic.js: all assertions passed');
 ```
