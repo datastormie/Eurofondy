@@ -390,8 +390,9 @@ tr:hover td:nth-child(1), tr:hover td:nth-child(2) { background: #f2f5fb; }
 
 .kraj-map-wrap { max-width: 720px; margin: 0 auto; }
 .kraj-map-wrap svg { width: 100%; height: auto; display: block; }
-.kraj-shape { stroke: #ffffff; stroke-width: 1.2; stroke-linejoin: round; cursor: pointer; transition: opacity 0.15s; }
+.kraj-shape { stroke: #ffffff; stroke-width: 1.2; stroke-linejoin: round; cursor: pointer; transition: opacity 0.15s; outline: none; }
 .kraj-shape:hover { opacity: 0.85; }
+.kraj-shape:focus-visible { stroke: var(--eu-gold); stroke-width: 3; }
 .kraj-label {
   font-family: var(--font-display);
   font-size: 15px;
