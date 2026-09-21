@@ -114,12 +114,13 @@
       <table id="dataTable" style="display:none;">
         <thead>
           <tr>
-            <th data-key="kod" data-type="string">Code</th>
-            <th data-key="nazov" data-type="string">Project Name</th>
+            <th data-key="project_kod" data-type="string">Code</th>
+            <th data-key="project_nazov" data-type="string">Project Name</th>
             <th data-key="program_skratka" data-type="string">Program</th>
             <th data-key="program_nazov" data-type="string">Program Name</th>
             <th data-key="prijimatel_nazov" data-type="string">Recipient</th>
             <th data-key="prijimatel_ico" data-type="string">ICO</th>
+            <th data-key="kraj_names" data-type="string">Regions</th>
             <th data-key="stav" data-type="string">Status</th>
             <th data-key="vrealizacii" data-type="bool">In Progress</th>
             <th data-key="ukonceny" data-type="bool">Completed</th>
@@ -149,7 +150,7 @@
 
 <script src="projects_logic.js"></script>
 <script>
-const JSON_URL = 'project_data.json';
+const JSON_URL = 'regional_funding_data.json';
 const PAGE_SIZE = 25;
 
 let allData = [];
@@ -268,12 +269,13 @@ function renderTableRows(rows) {
   rows.forEach(function (row) {
     const tr = document.createElement('tr');
     tr.innerHTML =
-      '<td>' + (row.kod || '') + '</td>' +
-      '<td class="wrap">' + (row.nazov || '') + '</td>' +
+      '<td>' + (row.project_kod || '') + '</td>' +
+      '<td class="wrap">' + (row.project_nazov || '') + '</td>' +
       '<td>' + (row.program_skratka || '') + '</td>' +
       '<td class="wrap">' + (row.program_nazov || '') + '</td>' +
       '<td class="wrap">' + (row.prijimatel_nazov || '') + '</td>' +
       '<td>' + formatIcoLink(row.prijimatel_ico) + '</td>' +
+      '<td class="wrap">' + (row.kraj_names || '') + '</td>' +
       '<td>' + (row.stav || '') + '</td>' +
       '<td>' + (row.vrealizacii ? 'Yes' : 'No') + '</td>' +
       '<td>' + (row.ukonceny ? 'Yes' : 'No') + '</td>' +
@@ -449,7 +451,7 @@ fetch(JSON_URL)
     return response.json();
   })
   .then(function (payload) {
-    allData = payload.projects;
+    allData = payload.regional_funding;
     document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
     populateProgramDropdown(allData);
     applyFiltersFromUrl();
