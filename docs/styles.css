@@ -379,6 +379,35 @@ tr:hover td:nth-child(1), tr:hover td:nth-child(2) { background: #f2f5fb; }
   margin-top: 18px; font-size: 13px; color: var(--muted);
 }
 
+.drilldown-title {
+  font-family: var(--font-display);
+  color: var(--navy-base);
+  font-size: 16px;
+  font-weight: 600;
+  margin: 28px 0 12px 0;
+}
+.drilldown-scroll { max-height: 420px; overflow-y: auto; }
+
+.kraj-map-wrap { max-width: 720px; margin: 0 auto; }
+.kraj-map-wrap svg { width: 100%; height: auto; display: block; }
+.kraj-shape { stroke: #ffffff; stroke-width: 2; cursor: pointer; transition: opacity 0.15s; }
+.kraj-shape:hover { opacity: 0.85; }
+.kraj-label {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  fill: #ffffff;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+.kraj-legend { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+.kraj-legend-scale { width: 160px; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #cfd9f0, #003399); }
+
+@media (max-width: 768px) {
+  .kraj-label { font-size: 15px; }
+}
+
 /* ---------- Chart pages ---------- */
 .chart-wrap { width: 100%; }
 
