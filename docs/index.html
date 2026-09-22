@@ -10,11 +10,20 @@
 <link rel="stylesheet" href="styles.css?v=4">
 <style>
   .chart-section { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--hairline); }
-  .scale-toggle { text-align: center; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+  .scale-toggle { text-align: center; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+  .scale-toggle:last-of-type { margin-bottom: 0; }
   .scale-toggle label { margin-right: 20px; cursor: pointer; display: inline-block; }
   .chart-wrap { max-width: 700px; height: 280px; margin: 0 auto; }
   table { min-width: 640px; }
   tbody tr { cursor: pointer; }
+
+  .filters-actions--inline { grid-column: -2 / -1; align-self: end; text-align: right; }
+  .btn-reset {
+    border-color: rgba(220, 38, 38, 0.35);
+    background: rgba(220, 38, 38, 0.08);
+    color: #b91c1c;
+  }
+  .btn-reset:hover { background: rgba(220, 38, 38, 0.16); }
 
   @media (max-width: 768px) { .chart-wrap { height: 240px; } }
   @media (max-width: 480px) {
@@ -53,8 +62,40 @@
   <p class="updated" id="updated-label">Loading...</p>
   <p class="hint">Tip: click a program row to see its projects.</p>
 
-  <div class="search">
-    <input type="text" id="searchBox" placeholder="Filter by name or code...">
+  <div class="filters">
+    <div class="filter-group">
+      <label for="codeToggle">Code</label>
+      <div class="multiselect" id="codeMulti">
+        <button type="button" class="ms-toggle" id="codeToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="codeToggleLabel">All codes</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="codePanel" role="dialog" aria-label="Filter by program code">
+          <div class="ms-actions">
+            <button type="button" id="codeSelectAll">Select all</button>
+            <button type="button" id="codeClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="codeOptions"></div>
+        </div>
+      </div>
+    </div>
+    <div class="filter-group">
+      <label for="nameToggle">Program</label>
+      <div class="multiselect" id="nameMulti">
+        <button type="button" class="ms-toggle" id="nameToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="nameToggleLabel">All programs</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="namePanel" role="dialog" aria-label="Filter by program name">
+          <div class="ms-actions">
+            <button type="button" id="nameSelectAll">Select all</button>
+            <button type="button" id="nameClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="nameOptions"></div>
+        </div>
+      </div>
+    </div>
+    <div class="filters-actions filters-actions--inline">
+      <button class="btn-secondary btn-reset" id="resetFilters">Reset filters</button>
+    </div>
   </div>
 
   <div id="table-container">
@@ -106,6 +147,30 @@ let sortKey = 'zazmluvnene_spolu';
 let sortDir = 'desc';
 let fundingChart = null;
 let chartMetric = 'volume';
+const selectedCodes = new Set();
+const selectedNames = new Set();
+
+// Draws each bar's raw value centered above the bar — only attached to the
+// project-count chart (the stacked volume chart has two segments per bar,
+// where a value label per segment would clutter more than it clarifies).
+const barValueLabelsPlugin = {
+  id: 'barValueLabels',
+  afterDatasetsDraw: function(chart) {
+    const ctx = chart.ctx;
+    const meta = chart.getDatasetMeta(0);
+    ctx.save();
+    ctx.fillStyle = '#1f2937';
+    ctx.font = "600 11px 'Montserrat', Arial, Helvetica, sans-serif";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    meta.data.forEach(function(bar, index) {
+      const value = chart.data.datasets[0].data[index];
+      if (value == null) return;
+      ctx.fillText(value.toLocaleString(), bar.x, bar.y - 4);
+    });
+    ctx.restore();
+  }
+};
 
 function formatEUR(value) {
   if (value == null) return '';
@@ -119,6 +184,76 @@ function formatDate(iso) {
 
 function goToProjects(skratka) {
   window.location.href = 'projects.html?program=' + encodeURIComponent(skratka);
+}
+
+function updateCodeToggleLabel() {
+  const label = document.getElementById('codeToggleLabel');
+  const count = selectedCodes.size;
+  if (count === 0) label.textContent = 'All codes';
+  else if (count === 1) label.textContent = Array.from(selectedCodes)[0];
+  else label.textContent = count + ' codes selected';
+}
+
+function populateCodeDropdown(data) {
+  const container = document.getElementById('codeOptions');
+  const options = [...data].sort(function(a, b) { return a.skratka.localeCompare(b.skratka); });
+  container.innerHTML = '';
+  options.forEach(function(row) {
+    const code = row.skratka;
+    const wrap = document.createElement('label');
+    wrap.className = 'ms-option';
+    wrap.title = row.nazov_sk || code;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = code;
+    cb.addEventListener('change', function() {
+      if (cb.checked) selectedCodes.add(code);
+      else selectedCodes.delete(code);
+      updateCodeToggleLabel();
+      render();
+    });
+    const span = document.createElement('span');
+    span.textContent = code;
+    wrap.appendChild(cb);
+    wrap.appendChild(span);
+    container.appendChild(wrap);
+  });
+  updateCodeToggleLabel();
+}
+
+function updateNameToggleLabel() {
+  const label = document.getElementById('nameToggleLabel');
+  const count = selectedNames.size;
+  if (count === 0) label.textContent = 'All programs';
+  else if (count === 1) label.textContent = Array.from(selectedNames)[0];
+  else label.textContent = count + ' programs selected';
+}
+
+function populateNameDropdown(data) {
+  const container = document.getElementById('nameOptions');
+  const options = [...data].sort(function(a, b) { return (a.nazov_sk || '').localeCompare(b.nazov_sk || ''); });
+  container.innerHTML = '';
+  options.forEach(function(row) {
+    const name = row.nazov_sk;
+    const wrap = document.createElement('label');
+    wrap.className = 'ms-option';
+    wrap.title = name;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = name;
+    cb.addEventListener('change', function() {
+      if (cb.checked) selectedNames.add(name);
+      else selectedNames.delete(name);
+      updateNameToggleLabel();
+      render();
+    });
+    const span = document.createElement('span');
+    span.textContent = name;
+    wrap.appendChild(cb);
+    wrap.appendChild(span);
+    container.appendChild(wrap);
+  });
+  updateNameToggleLabel();
 }
 
 function renderTable(data) {
@@ -162,52 +297,44 @@ function renderChart(data) {
   if (fundingChart) fundingChart.destroy();
 
   const datasets = chartMetric === 'count'
-    ? [{
-        label: 'Projects',
-        data: sorted.map(function(d) { return d.project_count; }),
-        borderColor: '#003399',
-        backgroundColor: 'rgba(0, 51, 153, 0.15)',
-        pointBackgroundColor: '#003399',
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        fill: true,
-        tension: 0.25
-      }]
+    ? [{ label: 'Project Count', data: sorted.map(function(d) { return d.project_count; }), backgroundColor: '#003399', borderRadius: 3 }]
     : [
         { label: 'EU contribution', data: sorted.map(function(d) { return d.zazmluvnene_eu; }), backgroundColor: '#003399', borderRadius: 3 },
         { label: 'National (SR) contribution', data: sorted.map(function(d) { return d.zazmluvnene_sr; }), backgroundColor: '#7C93C7', borderRadius: 3 }
       ];
 
-  const yScaleType = chartMetric === 'count' ? 'linear' : document.querySelector('input[name="scale"]:checked').value;
+  const yScaleType = document.querySelector('input[name="scale"]:checked').value;
   const yScale = {
     stacked: chartMetric !== 'count',
     type: yScaleType,
-    beginAtZero: true,
+    beginAtZero: yScaleType !== 'logarithmic',
     ticks: {
       callback: function(value) {
         return chartMetric === 'count' ? value : '€' + formatEURShort(value);
       }
     },
-    title: { display: true, text: chartMetric === 'count' ? 'Projects' : 'EUR' }
+    title: { display: true, text: chartMetric === 'count' ? 'Project Count' : 'EUR' }
   };
   // Re-apply the log-scale floor here too — the scale-toggle's own change
   // listener only sets `min` on the already-built chart, so switching the
   // metric (which rebuilds the chart from scratch) would otherwise lose it.
-  if (chartMetric !== 'count' && yScaleType === 'logarithmic') {
-    yScale.min = 1e6;
+  if (yScaleType === 'logarithmic') {
+    yScale.min = chartMetric === 'count' ? 1 : 1e6;
   }
 
   fundingChart = new Chart(ctx, {
-    type: chartMetric === 'count' ? 'line' : 'bar',
+    type: 'bar',
     data: { labels: labels, datasets: datasets },
+    plugins: chartMetric === 'count' ? [barValueLabelsPlugin] : [],
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 0 } },
       onClick: function(evt, elements) {
         if (elements.length > 0) goToProjects(labels[elements[0].index]);
       },
       plugins: {
-        legend: { position: 'top' },
+        legend: { position: 'top', labels: { padding: chartMetric === 'count' ? 28 : 14 } },
         tooltip: {
           callbacks: {
             title: function(items) { return fullNames[items[0].dataIndex]; },
@@ -230,15 +357,17 @@ function renderChart(data) {
 document.querySelectorAll('input[name="metric"]').forEach(function(radio) {
   radio.addEventListener('change', function(e) {
     chartMetric = e.target.value;
-    renderChart(currentData);
+    renderChart(getFilteredData());
   });
 });
 
 document.querySelectorAll('input[name="scale"]').forEach(function(radio) {
   radio.addEventListener('change', function(e) {
-    if (!fundingChart || chartMetric === 'count') return;
+    if (!fundingChart) return;
+    const isLog = e.target.value === 'logarithmic';
     fundingChart.options.scales.y.type = e.target.value;
-    fundingChart.options.scales.y.min = e.target.value === 'logarithmic' ? 1e6 : undefined;
+    fundingChart.options.scales.y.beginAtZero = !isLog;
+    fundingChart.options.scales.y.min = isLog ? (chartMetric === 'count' ? 1 : 1e6) : undefined;
     fundingChart.update();
   });
 });
@@ -261,17 +390,25 @@ function sortData(data, key, dir) {
   return sorted;
 }
 
-function applySortAndFilter() {
-  const query = document.getElementById('searchBox').value.trim().toLowerCase();
+function getFilteredData() {
   let filtered = currentData;
-  if (query) {
-    filtered = currentData.filter(function(row) {
-      return (row.nazov_sk || '').toLowerCase().includes(query) ||
-             (row.skratka || '').toLowerCase().includes(query);
-    });
+  if (selectedCodes.size > 0) {
+    filtered = filtered.filter(function(row) { return selectedCodes.has(row.skratka); });
   }
-  const sorted = sortData(filtered, sortKey, sortDir);
-  renderTable(sorted);
+  if (selectedNames.size > 0) {
+    filtered = filtered.filter(function(row) { return selectedNames.has(row.nazov_sk); });
+  }
+  return filtered;
+}
+
+function renderTableForCurrentFilters() {
+  renderTable(sortData(getFilteredData(), sortKey, sortDir));
+}
+
+function render() {
+  const filtered = getFilteredData();
+  renderChart(filtered);
+  renderTable(sortData(filtered, sortKey, sortDir));
 }
 
 document.querySelectorAll('th').forEach(function(th) {
@@ -287,11 +424,66 @@ document.querySelectorAll('th').forEach(function(th) {
       t.classList.remove('sorted-asc', 'sorted-desc');
     });
     th.classList.add(sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
-    applySortAndFilter();
+    renderTableForCurrentFilters();
   });
 });
 
-document.getElementById('searchBox').addEventListener('input', applySortAndFilter);
+const codeMulti = document.getElementById('codeMulti');
+const codeToggle = document.getElementById('codeToggle');
+codeToggle.addEventListener('click', function(e) {
+  e.stopPropagation();
+  codeMulti.classList.toggle('open');
+  codeToggle.setAttribute('aria-expanded', codeMulti.classList.contains('open') ? 'true' : 'false');
+});
+document.addEventListener('click', function(e) {
+  if (!codeMulti.contains(e.target)) codeMulti.classList.remove('open');
+});
+document.getElementById('codeSelectAll').addEventListener('click', function() {
+  selectedCodes.clear();
+  currentData.forEach(function(row) { selectedCodes.add(row.skratka); });
+  document.querySelectorAll('#codeOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = true; });
+  updateCodeToggleLabel();
+  render();
+});
+document.getElementById('codeClearAll').addEventListener('click', function() {
+  selectedCodes.clear();
+  document.querySelectorAll('#codeOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+  updateCodeToggleLabel();
+  render();
+});
+
+const nameMulti = document.getElementById('nameMulti');
+const nameToggle = document.getElementById('nameToggle');
+nameToggle.addEventListener('click', function(e) {
+  e.stopPropagation();
+  nameMulti.classList.toggle('open');
+  nameToggle.setAttribute('aria-expanded', nameMulti.classList.contains('open') ? 'true' : 'false');
+});
+document.addEventListener('click', function(e) {
+  if (!nameMulti.contains(e.target)) nameMulti.classList.remove('open');
+});
+document.getElementById('nameSelectAll').addEventListener('click', function() {
+  selectedNames.clear();
+  currentData.forEach(function(row) { selectedNames.add(row.nazov_sk); });
+  document.querySelectorAll('#nameOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = true; });
+  updateNameToggleLabel();
+  render();
+});
+document.getElementById('nameClearAll').addEventListener('click', function() {
+  selectedNames.clear();
+  document.querySelectorAll('#nameOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+  updateNameToggleLabel();
+  render();
+});
+
+document.getElementById('resetFilters').addEventListener('click', function() {
+  selectedCodes.clear();
+  selectedNames.clear();
+  document.querySelectorAll('#codeOptions input[type="checkbox"], #nameOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
+  updateCodeToggleLabel();
+  updateNameToggleLabel();
+  render();
+});
 
 fetch(JSON_URL)
   .then(function(response) {
@@ -303,8 +495,9 @@ fetch(JSON_URL)
     document.getElementById('updated-label').textContent =
       'Last updated: ' + formatDate(payload.generated_at);
     document.getElementById('dataTable').style.display = 'table';
-    renderChart(currentData);
-    applySortAndFilter();
+    populateCodeDropdown(currentData);
+    populateNameDropdown(currentData);
+    render();
   })
   .catch(function(err) {
     document.getElementById('updated-label').textContent = '';
