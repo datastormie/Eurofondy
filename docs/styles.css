@@ -237,7 +237,7 @@ h1 {
   border-radius: 10px;
   border: 1px solid rgba(0, 51, 153, 0.12);
 }
-.filter-group { display: flex; flex-direction: column; }
+.filter-group { display: flex; flex-direction: column; min-width: 0; }
 /* :not(.ms-option) excludes the per-option <label> rows inside a dropdown's
    option list — this rule is only for the field's own label (e.g. "Recipient"),
    never the picked values themselves, which must keep their source casing. */
@@ -250,9 +250,10 @@ h1 {
   letter-spacing: 0.05em;
 }
 /* ---------- Multi-select dropdown (Program filter) ---------- */
-.multiselect { position: relative; }
+.multiselect { position: relative; min-width: 0; }
 .ms-toggle {
   width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -268,7 +269,7 @@ h1 {
   text-align: left;
 }
 .ms-toggle:focus { outline: 2px solid var(--eu-gold); outline-offset: 1px; border-color: var(--eu-blue); }
-.ms-toggle > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-toggle > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-caret { font-size: 11px; color: var(--eu-blue); }
 .multiselect.open .ms-caret { transform: rotate(180deg); }
 
