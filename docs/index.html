@@ -13,7 +13,7 @@
   .scale-toggle { text-align: center; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
   .scale-toggle:last-of-type { margin-bottom: 0; }
   .scale-toggle label { margin-right: 20px; cursor: pointer; display: inline-block; }
-  .chart-wrap { max-width: 700px; height: 280px; margin: 0 auto; }
+  .chart-wrap { max-width: 700px; height: 280px; margin: -10px auto 0; }
   table { min-width: 640px; }
   tbody tr { cursor: pointer; }
 
@@ -315,6 +315,11 @@ function renderChart(data) {
   if (yScaleType === 'logarithmic') {
     yScale.min = chartMetric === 'count' ? 1 : 1e6;
   }
+  // Headroom so the tallest bar (and its value label, in count mode) doesn't
+  // butt up against the legend — log scale compresses distances near the
+  // top, so it needs a bigger multiplier than linear to get the same gap.
+  const maxVal = sorted.length ? sorted[0][sortField] : 0;
+  yScale.suggestedMax = maxVal * (yScaleType === 'logarithmic' ? 3 : 1.15);
 
   fundingChart = new Chart(ctx, {
     type: 'bar',
@@ -328,7 +333,7 @@ function renderChart(data) {
         if (elements.length > 0) goToProjects(labels[elements[0].index]);
       },
       plugins: {
-        legend: { position: 'top', labels: { padding: chartMetric === 'count' ? 28 : 14 } },
+        legend: { position: 'top', labels: { padding: 10 } },
         tooltip: {
           callbacks: {
             title: function(items) { return fullNames[items[0].dataIndex]; },
