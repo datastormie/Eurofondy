@@ -13,6 +13,12 @@
   table { min-width: 1100px; }
   .chart-wrap { height: 360px; margin-bottom: 28px; }
   @media (max-width: 480px) { table { min-width: 900px; } }
+  /* ICO (2nd column) only needs room for an 8-digit number, unlike the
+     long-text columns styles.css's generic frozen-column rule (260px)
+     is sized for on other pages. */
+  @media (min-width: 769px) {
+    th:nth-child(2), td:nth-child(2) { width: 140px; min-width: 140px; }
+  }
 </style>
 </head>
 <body>
