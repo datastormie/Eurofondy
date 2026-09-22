@@ -11,7 +11,7 @@
 <style>
   .card { max-width: 1300px; }
   table { min-width: 1200px; }
-  .chart-wrap { height: 420px; margin-bottom: 28px; }
+  .chart-wrap { height: 460px; margin-bottom: 28px; }
   @media (max-width: 480px) { table { min-width: 900px; } }
 </style>
 </head>
@@ -236,33 +236,126 @@ function populateStatusFilter(data) {
   statusFilter.setItems(statuses.map(function (s) { return { key: s, label: s }; }));
 }
 
+// Per-supplier totals plus their distinct project count (project_id is
+// de-duplicated per supplier — a supplier can hold several contracts on the
+// same project, which should still count as one project).
+function groupSupplierStats(data) {
+  const map = new Map();
+  data.forEach(function (row) {
+    const key = row.supplier_ico || row.supplier_nazov;
+    if (!map.has(key)) {
+      map.set(key, { key: key, label: row.supplier_nazov, celkovasumazmluvy: 0, projectIds: new Set() });
+    }
+    const entry = map.get(key);
+    entry.celkovasumazmluvy += Number(row.celkovasumazmluvy) || 0;
+    if (row.project_id != null) entry.projectIds.add(row.project_id);
+  });
+  return Array.from(map.values())
+    .map(function (e) {
+      return { key: e.key, label: e.label, celkovasumazmluvy: e.celkovasumazmluvy, project_count: e.projectIds.size };
+    })
+    .sort(function (a, b) { return b.celkovasumazmluvy - a.celkovasumazmluvy; });
+}
+
 function renderChart(data) {
   if (!HAS_CHART) return;
-  const grouped = DatamartLogic.groupSum(
-    data, function (r) { return r.supplier_ico || r.supplier_nazov; }, ['celkovasumazmluvy'],
-    function (r) { return r.supplier_nazov; }
-  ).slice(0, 20);
+  const grouped = groupSupplierStats(data).slice(0, 20);
+  const maxValue = grouped.length ? Math.max.apply(null, grouped.map(function (g) { return g.celkovasumazmluvy; })) : 0;
+
+  // With 20 suppliers in a fixed-height chart, Chart.js's default
+  // autoSkip drops some y-axis labels to avoid overlap. Disable autoSkip
+  // (below) and grow the chart to fit one legible row per supplier instead.
+  const wrap = document.getElementById('supplierChart').closest('.chart-wrap');
+  wrap.style.height = Math.max(460, 170 + grouped.length * 24) + 'px';
+
+  // Draws the € total to the right of each supplier's value bar (dataset 0
+  // — the line dataset on the secondary axis is left unlabeled to avoid clutter).
+  const amountLabelsPlugin = {
+    id: 'amountLabels',
+    afterDatasetsDraw: function (chart) {
+      const meta = chart.getDatasetMeta(0);
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = '#1f2937';
+      ctx.font = "600 10px 'Montserrat', Arial, Helvetica, sans-serif";
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      meta.data.forEach(function (bar, i) {
+        const val = grouped[i].celkovasumazmluvy;
+        if (val == null) return;
+        ctx.fillText('€' + formatEURShort(val), bar.x + 6, bar.y);
+      });
+      ctx.restore();
+    }
+  };
 
   new Chart(document.getElementById('supplierChart').getContext('2d'), {
     type: 'bar',
     data: {
       labels: grouped.map(function (g) { return (g.label || '').length > 40 ? g.label.slice(0, 37) + '…' : g.label; }),
-      datasets: [{ label: 'Total contract value (€)', data: grouped.map(function (g) { return g.celkovasumazmluvy; }), backgroundColor: '#003399', borderRadius: 3 }]
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Total contract value (€)',
+          data: grouped.map(function (g) { return g.celkovasumazmluvy; }),
+          backgroundColor: '#003399',
+          borderRadius: 3,
+          xAxisID: 'x',
+          order: 1
+        },
+        {
+          type: 'line',
+          label: 'Number of projects',
+          data: grouped.map(function (g) { return g.project_count; }),
+          borderColor: '#FFCC00',
+          backgroundColor: '#FFCC00',
+          pointBackgroundColor: '#FFCC00',
+          pointRadius: 4,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+          // No bezier smoothing here: with categories on the y-axis, a
+          // curved line between widely-spaced points loops through
+          // unrelated bars' rows — straight segments stay readable.
+          tension: 0,
+          xAxisID: 'x1',
+          // Lower order draws last, keeping the line on top of the bars.
+          order: 0
+        }
+      ]
     },
+    plugins: [amountLabelsPlugin],
     options: {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       onClick: function (evt, elements) {
-        if (elements.length > 0) {
-          supplierFilter.setSelected([grouped[elements[0].index].key]);
+        const barEl = elements.find(function (el) { return el.datasetIndex === 0; });
+        if (barEl) {
+          supplierFilter.setSelected([grouped[barEl.index].key]);
           currentPage = 1;
           render();
         }
       },
       onHover: function (evt, elements) { evt.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default'; },
-      plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true, ticks: { callback: function (v) { return '€' + formatEURShort(v); } } } }
+      plugins: { legend: { display: true, position: 'top' } },
+      scales: {
+        x: {
+          beginAtZero: true,
+          suggestedMax: maxValue * 1.2,
+          ticks: { callback: function (v) { return '€' + formatEURShort(v); } },
+          title: { display: true, text: 'Total contract value (€)' }
+        },
+        x1: {
+          beginAtZero: true,
+          position: 'top',
+          grid: { drawOnChartArea: false },
+          ticks: { precision: 0 },
+          title: { display: true, text: 'Number of projects' }
+        },
+        y: {
+          ticks: { autoSkip: false }
+        }
+      }
     }
   });
 }

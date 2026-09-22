@@ -11,7 +11,7 @@
 <style>
   .card { max-width: 1300px; }
   table { min-width: 1100px; }
-  .chart-wrap { height: 320px; margin-bottom: 28px; }
+  .chart-wrap { height: 360px; margin-bottom: 28px; }
   @media (max-width: 480px) { table { min-width: 900px; } }
 </style>
 </head>
@@ -221,18 +221,126 @@ function populateLegalFormFilter(data) {
 
 function renderChart(data) {
   if (!HAS_CHART) return;
-  const grouped = DatamartLogic.groupSum(data, function (r) { return r.pravnaforma_nazov || 'Unknown'; }, ['suma_spolu']).slice(0, 10);
+  const grouped = DatamartLogic.groupSum(data, function (r) { return r.pravnaforma_nazov || 'Unknown'; }, ['suma_spolu', 'project_count']).slice(0, 10);
+  const maxFunding = grouped.length ? Math.max.apply(null, grouped.map(function (g) { return g.suma_spolu; })) : 0;
+  const labels = grouped.map(function (g) { return g.key; });
+
+  // Rotated 45° x-axis labels need vertical room proportional to the
+  // longest legal-form name — a fixed chart height clips long ones, so
+  // size the wrapper from the actual label text instead of a guessed constant.
+  const wrap = document.getElementById('legalFormChart').closest('.chart-wrap');
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = "500 11px 'Montserrat', Arial, Helvetica, sans-serif";
+  const maxLabelWidth = labels.reduce(function (max, l) { return Math.max(max, measureCtx.measureText(l).width); }, 0);
+  const rotatedLabelHeight = maxLabelWidth * Math.SQRT1_2; // projection of a 45° label onto the vertical axis
+  wrap.style.height = Math.round(240 + rotatedLabelHeight) + 'px';
+
+  // Draws the € total above each funding bar (dataset 0 — the line dataset
+  // on the secondary axis is left unlabeled to avoid clutter).
+  const amountLabelsPlugin = {
+    id: 'amountLabels',
+    afterDatasetsDraw: function (chart) {
+      const meta = chart.getDatasetMeta(0);
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = '#1f2937';
+      ctx.font = "600 11px 'Montserrat', Arial, Helvetica, sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      meta.data.forEach(function (bar, i) {
+        const val = grouped[i].suma_spolu;
+        if (val == null) return;
+        ctx.fillText('€' + formatEURShort(val), bar.x, bar.y - 6);
+      });
+      ctx.restore();
+    }
+  };
+
+  // Chart.js's built-in rotated tick labels squeeze/clip long text to an
+  // internal per-tick width budget (visibly chopping the start off long
+  // legal-form names), so the x scale's own labels are hidden below and
+  // drawn here instead at a fixed, unclipped 45°. Uses afterDraw (not
+  // afterRender) so it also redraws on hover/tooltip-triggered updates.
+  const categoryLabelsPlugin = {
+    id: 'categoryLabels',
+    afterDraw: function (chart) {
+      const xScale = chart.scales.x;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.font = "500 11px 'Montserrat', Arial, Helvetica, sans-serif";
+      ctx.fillStyle = '#4b5563';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      labels.forEach(function (label, i) {
+        const x = xScale.getPixelForTick(i);
+        ctx.save();
+        ctx.translate(x, chart.chartArea.bottom + 10);
+        ctx.rotate(-Math.PI / 4);
+        ctx.fillText(label, 0, 0);
+        ctx.restore();
+      });
+      ctx.restore();
+    }
+  };
+
   new Chart(document.getElementById('legalFormChart').getContext('2d'), {
     type: 'bar',
     data: {
       labels: grouped.map(function (g) { return g.key; }),
-      datasets: [{ label: 'Total funding (€)', data: grouped.map(function (g) { return g.suma_spolu; }), backgroundColor: '#003399', borderRadius: 3 }]
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Total funding (€)',
+          data: grouped.map(function (g) { return g.suma_spolu; }),
+          backgroundColor: '#003399',
+          borderRadius: 3,
+          yAxisID: 'y',
+          order: 1
+        },
+        {
+          type: 'line',
+          label: 'Number of projects',
+          data: grouped.map(function (g) { return g.project_count; }),
+          borderColor: '#FFCC00',
+          backgroundColor: '#FFCC00',
+          pointBackgroundColor: '#FFCC00',
+          pointRadius: 4,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+          tension: 0.3,
+          yAxisID: 'y1',
+          // Lower order draws last, keeping the line on top of the bars.
+          order: 0
+        }
+      ]
     },
+    plugins: [amountLabelsPlugin, categoryLabelsPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return '€' + formatEURShort(v); } } } }
+      plugins: { legend: { display: true, position: 'top' } },
+      scales: {
+        x: {
+          // Labels are drawn manually by categoryLabelsPlugin (Chart.js's
+          // own rotated-label rendering clips long text) — just reserve
+          // the vertical space they need.
+          ticks: { display: false },
+          afterFit: function (scale) { scale.height = Math.round(rotatedLabelHeight + 26); }
+        },
+        y: {
+          beginAtZero: true,
+          suggestedMax: maxFunding * 1.18,
+          ticks: { callback: function (v) { return '€' + formatEURShort(v); } },
+          title: { display: true, text: 'Total funding (€)' }
+        },
+        y1: {
+          beginAtZero: true,
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { precision: 0 },
+          title: { display: true, text: 'Number of projects' }
+        }
+      }
     }
   });
 }
