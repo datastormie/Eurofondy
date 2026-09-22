@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css?v=4">
 <style>
+  .scale-toggle { text-align: center; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
+  .scale-toggle label { margin-right: 20px; cursor: pointer; display: inline-block; }
   .chart-wrap { height: 1400px; }
   @media (max-width: 768px) { .chart-wrap { height: 1100px; } }
   @media (max-width: 480px) { .chart-wrap { height: 950px; } }
@@ -45,6 +47,11 @@
 
   <p class="error" style="display:none;" id="error-box"></p>
 
+  <div class="scale-toggle">
+    <label><input type="radio" name="scale" value="linear" checked> Linear scale</label>
+    <label><input type="radio" name="scale" value="logarithmic"> Log scale</label>
+  </div>
+
   <div class="chart-wrap">
     <canvas id="topProjectsChart"></canvas>
   </div>
@@ -78,6 +85,9 @@ function goToProject(kod, nazov) {
     (nazov ? '&nazov=' + encodeURIComponent(nazov) : '');
 }
 
+let topChart = null;
+let lastData = null;
+
 function renderTopChart(data) {
   if (!HAS_CHART) {
     document.getElementById('error-box').style.display = 'block';
@@ -101,10 +111,85 @@ function renderTopChart(data) {
   const programNames = ordered.map(function (p) { return p.program_nazov || ''; });
   const srAmounts = ordered.map(function (p) { return p.suma_sr || 0; });
   const euAmounts = ordered.map(function (p) { return p.suma_eu || 0; });
+  const totals = ordered.map(function (p, i) { return srAmounts[i] + euAmounts[i]; });
+  const maxTotal = totals.length ? Math.max.apply(null, totals) : 0;
+  const positiveTotals = totals.filter(function (v) { return v > 0; });
+  const minTotal = positiveTotals.length ? Math.min.apply(null, positiveTotals) : 0;
+
+  const scaleType = document.querySelector('input[name="scale"]:checked').value;
+  const isLog = scaleType === 'logarithmic';
+  // Headroom past the largest total so its value label and the mirrored top
+  // axis both have room — log scale compresses distances near the top, so
+  // it needs a bigger multiplier than linear to get the same visual gap.
+  const xMax = maxTotal * (isLog ? 2.2 : 1.18);
+  const xMin = isLog ? Math.max(minTotal * 0.5, 1) : 0;
+
+  // Draws the SR+EU total at the end of each stacked bar.
+  const totalLabelsPlugin = {
+    id: 'totalLabels',
+    afterDatasetsDraw: function (chart) {
+      const ctx = chart.ctx;
+      const meta = chart.getDatasetMeta(1);
+      ctx.save();
+      ctx.fillStyle = '#1f2937';
+      ctx.font = "600 11px 'Montserrat', Arial, Helvetica, sans-serif";
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      meta.data.forEach(function (bar, i) {
+        if (totals[i] == null) return;
+        ctx.fillText('€' + formatEURShort(totals[i]), bar.x + 6, bar.y);
+      });
+      ctx.restore();
+    }
+  };
+
+  // Draws each segment's share of the bar's total inside the segment,
+  // skipping segments too narrow to hold the text legibly.
+  const stackPercentPlugin = {
+    id: 'stackPercent',
+    afterDatasetsDraw: function (chart) {
+      const ctx = chart.ctx;
+      const metaSR = chart.getDatasetMeta(0);
+      const metaEU = chart.getDatasetMeta(1);
+      ctx.save();
+      ctx.font = "600 10px 'Montserrat', Arial, Helvetica, sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const MIN_WIDTH = 26;
+      metaSR.data.forEach(function (srBar, i) {
+        const total = totals[i];
+        if (!total) return;
+        const euBar = metaEU.data[i];
+        const srWidth = Math.abs(srBar.x - srBar.base);
+        const euWidth = Math.abs(euBar.x - euBar.base);
+        if (srWidth > MIN_WIDTH) {
+          const srPct = Math.round((srAmounts[i] / total) * 100);
+          ctx.fillStyle = '#1f2937';
+          ctx.fillText(srPct + '%', (srBar.x + srBar.base) / 2, srBar.y);
+        }
+        if (euWidth > MIN_WIDTH) {
+          const euPct = Math.round((euAmounts[i] / total) * 100);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(euPct + '%', (euBar.x + euBar.base) / 2, euBar.y);
+        }
+      });
+      ctx.restore();
+    }
+  };
 
   const ctx = document.getElementById('topProjectsChart').getContext('2d');
+  if (topChart) topChart.destroy();
 
-  new Chart(ctx, {
+  const xAxisShared = {
+    stacked: true,
+    type: scaleType,
+    beginAtZero: !isLog,
+    min: isLog ? xMin : 0,
+    max: xMax,
+    ticks: { callback: function (v) { return '€' + formatEURShort(v); } }
+  };
+
+  topChart = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: labels,
@@ -113,6 +198,7 @@ function renderTopChart(data) {
         { label: 'EU (€)', data: euAmounts, backgroundColor: '#003399', borderRadius: 3 }
       ]
     },
+    plugins: [totalLabelsPlugin, stackPercentPlugin],
     options: {
       indexAxis: 'y',
       responsive: true,
@@ -136,22 +222,17 @@ function renderTopChart(data) {
             },
             footer: function (items) {
               const i = items[0].dataIndex;
-              const total = srAmounts[i] + euAmounts[i];
               return [
                 'Program: ' + programs[i] + ' — ' + programNames[i],
-                'Total: €' + total.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                'Total: €' + totals[i].toLocaleString(undefined, { maximumFractionDigits: 0 })
               ];
             }
           }
         }
       },
       scales: {
-        x: {
-          stacked: true,
-          beginAtZero: true,
-          ticks: { callback: function (v) { return '€' + formatEURShort(v); } },
-          title: { display: true, text: 'Amount (EUR)' }
-        },
+        x: Object.assign({}, xAxisShared, { title: { display: true, text: 'Amount (EUR)' } }),
+        x2: Object.assign({}, xAxisShared, { position: 'top', grid: { drawOnChartArea: false } }),
         y: {
           stacked: true,
           ticks: { autoSkip: false, font: { size: 10 } }
@@ -161,6 +242,12 @@ function renderTopChart(data) {
   });
 }
 
+document.querySelectorAll('input[name="scale"]').forEach(function (radio) {
+  radio.addEventListener('change', function () {
+    if (lastData) renderTopChart(lastData);
+  });
+});
+
 fetch(JSON_URL)
   .then(function (response) {
     if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -169,6 +256,7 @@ fetch(JSON_URL)
   .then(function (payload) {
     const data = payload.regional_funding;
     document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
+    lastData = data;
     renderTopChart(data);
   })
   .catch(function (err) {
