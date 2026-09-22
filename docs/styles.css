@@ -238,7 +238,10 @@ h1 {
   border: 1px solid rgba(0, 51, 153, 0.12);
 }
 .filter-group { display: flex; flex-direction: column; }
-.filter-group label {
+/* :not(.ms-option) excludes the per-option <label> rows inside a dropdown's
+   option list — this rule is only for the field's own label (e.g. "Recipient"),
+   never the picked values themselves, which must keep their source casing. */
+.filter-group label:not(.ms-option) {
   font-size: 10.5px;
   color: var(--eu-blue);
   margin-bottom: 5px;
@@ -284,6 +287,19 @@ h1 {
 }
 .multiselect.open .ms-panel { display: block; }
 
+.ms-search { padding: 8px 10px; border-bottom: 1px solid #eceff5; }
+.ms-search input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #d6dbe4;
+  border-radius: var(--radius-control);
+  font-size: 12.5px;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+.ms-search input:focus { outline: 2px solid var(--eu-gold); outline-offset: 1px; border-color: var(--eu-blue); }
+.ms-option-hidden { display: none !important; }
+.ms-empty { padding: 10px; font-size: 12px; color: var(--muted); text-align: center; }
 
 .ms-actions {
   display: flex;
@@ -350,11 +366,28 @@ h1 {
 
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; position: relative; border-radius: 10px; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; background: #fff; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--hairline); white-space: nowrap; background: #fff; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--hairline); white-space: nowrap; background: #fff; overflow: hidden; text-overflow: ellipsis; }
 th {
   background: var(--eu-blue); color: #fff; cursor: pointer; user-select: none;
   position: sticky; top: 0; z-index: 2; font-weight: 600; font-size: 12px;
 }
+
+/* ---------- Resizable columns ---------- */
+.resizable-th { padding-right: 18px; }
+.col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+.col-resize-handle:hover,
+.col-resize-handle:active { background: var(--eu-gold); }
+body.col-resizing,
+body.col-resizing * { cursor: col-resize !important; user-select: none !important; }
 th:hover { background: var(--eu-blue-hover); }
 th.sorted-asc::after { content: " \25B2"; color: var(--eu-gold); }
 th.sorted-desc::after { content: " \25BC"; color: var(--eu-gold); }
@@ -475,6 +508,9 @@ a:focus-visible, button:focus-visible {
     box-shadow: none;
     border-color: #cfd6e2;
   }
+
+  .ms-search { padding: 10px 12px; }
+  .ms-search input { padding: 10px 12px; font-size: 14px; }
 
   .ms-actions { padding: 10px 12px; }
   .ms-actions button { padding: 9px 10px; font-size: 13px; }

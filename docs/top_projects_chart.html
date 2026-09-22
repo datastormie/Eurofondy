@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <style>
   .scale-toggle { text-align: center; margin-bottom: 10px; font-size: 12px; color: var(--muted); }
   .scale-toggle label { margin-right: 20px; cursor: pointer; display: inline-block; }
@@ -156,21 +156,32 @@ function renderTopChart(data) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const MIN_WIDTH = 26;
+      // On a log scale a segment's own value (e.g. just the SR share) can
+      // fall below the axis minimum, which makes Chart.js extrapolate its
+      // pixel position past the plot's left edge — sometimes into negative
+      // territory, landing the label over the row's y-axis text. Clamp to
+      // the chart area before measuring width/placing the label so an
+      // off-chart segment is treated as zero-width and skipped instead.
+      const left = chart.chartArea.left;
+      const right = chart.chartArea.right;
+      function clampX(x) { return Math.min(Math.max(x, left), right); }
       metaSR.data.forEach(function (srBar, i) {
         const total = totals[i];
         if (!total) return;
         const euBar = metaEU.data[i];
-        const srWidth = Math.abs(srBar.x - srBar.base);
-        const euWidth = Math.abs(euBar.x - euBar.base);
+        const srX = clampX(srBar.x), srBase = clampX(srBar.base);
+        const euX = clampX(euBar.x), euBase = clampX(euBar.base);
+        const srWidth = Math.abs(srX - srBase);
+        const euWidth = Math.abs(euX - euBase);
         if (srWidth > MIN_WIDTH) {
           const srPct = Math.round((srAmounts[i] / total) * 100);
           ctx.fillStyle = '#1f2937';
-          ctx.fillText(srPct + '%', (srBar.x + srBar.base) / 2, srBar.y);
+          ctx.fillText(srPct + '%', (srX + srBase) / 2, srBar.y);
         }
         if (euWidth > MIN_WIDTH) {
           const euPct = Math.round((euAmounts[i] / total) * 100);
           ctx.fillStyle = '#ffffff';
-          ctx.fillText(euPct + '%', (euBar.x + euBar.base) / 2, euBar.y);
+          ctx.fillText(euPct + '%', (euX + euBase) / 2, euBar.y);
         }
       });
       ctx.restore();
@@ -180,13 +191,35 @@ function renderTopChart(data) {
   const ctx = document.getElementById('topProjectsChart').getContext('2d');
   if (topChart) topChart.destroy();
 
+  // On a log scale Chart.js generates a tick at every leading digit 1-9 of
+  // each decade (…7M, 8M, 9M, 10M…), which packs up near-illegibly close
+  // together once rotated. Only label the "nice" 1/2/5 steps per decade,
+  // matching how log axes are conventionally labeled, and let the rest
+  // render as unlabeled minor gridlines.
+  function isNiceLogTick(v) {
+    if (!(v > 0)) return false;
+    const exp = Math.floor(Math.log10(v) + 1e-9);
+    const norm = v / Math.pow(10, exp);
+    // Match against 1/2/5 (and the next decade's 1) within a tolerance,
+    // rather than rounding to the nearest integer digit — Chart.js's log
+    // scale also emits in-between ticks like 15, 25, 150 whose leading
+    // digit rounds to 2, which a plain Math.round() would wrongly keep.
+    return [1, 2, 5, 10].some(function (t) { return Math.abs(norm - t) / t < 0.01; });
+  }
+
   const xAxisShared = {
     stacked: true,
     type: scaleType,
     beginAtZero: !isLog,
     min: isLog ? xMin : 0,
     max: xMax,
-    ticks: { callback: function (v) { return '€' + formatEURShort(v); } }
+    ticks: {
+      autoSkip: !isLog,
+      callback: function (v) {
+        if (isLog && !isNiceLogTick(v)) return null;
+        return '€' + formatEURShort(v);
+      }
+    }
   };
 
   topChart = new Chart(ctx, {

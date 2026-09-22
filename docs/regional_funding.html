@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
 <div class="topbar">
@@ -38,7 +38,7 @@
   <p class="updated" id="updated-label">Loading...</p>
   <p class="hint">Tip: click or tap a region to see its projects below. Nationwide programmes (implemented in more than one region) are excluded from the map and shown as a separate total, since attributing them to one region would be misleading.</p>
 
-  <div class="filters" style="grid-template-columns: 1fr;">
+  <div class="filters" style="grid-template-columns: 1fr 1fr;">
     <div class="filter-group">
       <label for="programToggle">Program</label>
       <div class="multiselect" id="programMulti">
@@ -46,6 +46,9 @@
           <span id="programToggleLabel">All programs</span><span class="ms-caret">▾</span>
         </button>
         <div class="ms-panel" id="programPanel" role="dialog" aria-label="Filter by program">
+          <div class="ms-search">
+            <input type="text" id="programSearch" placeholder="Type to search programs...">
+          </div>
           <div class="ms-actions">
             <button type="button" id="programSelectAll">Select all</button>
             <button type="button" id="programClearAll">Clear</button>
@@ -53,6 +56,27 @@
           <div class="ms-options" id="programOptions"></div>
         </div>
       </div>
+    </div>
+    <div class="filter-group">
+      <label for="recipientToggle">Recipient</label>
+      <div class="multiselect" id="recipientMulti">
+        <button type="button" class="ms-toggle" id="recipientToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="recipientToggleLabel">All recipients</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="recipientPanel" role="dialog" aria-label="Filter by recipient">
+          <div class="ms-search">
+            <input type="text" id="recipientSearch" placeholder="Type to search recipients...">
+          </div>
+          <div class="ms-actions">
+            <button type="button" id="recipientSelectAll">Select all</button>
+            <button type="button" id="recipientClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="recipientOptions"></div>
+        </div>
+      </div>
+    </div>
+    <div class="filters-actions">
+      <button class="btn-secondary" id="resetFilters">Reset filters</button>
     </div>
   </div>
 
@@ -68,11 +92,17 @@
   <p class="hint" id="nationwideCallout" style="display:none;"></p>
 
   <h2 class="drilldown-title" id="drilldownTitle" style="display:none;"></h2>
+  <p class="hint" id="drilldownHint" style="display:none;">Tip: click a project row to open it in the Projects table.</p>
   <div class="table-scroll drilldown-scroll" id="drilldownWrap" style="display:none;">
     <table id="drilldownTable">
       <thead>
         <tr>
-          <th>Code</th><th>Project Name</th><th>Program</th><th>Recipient</th><th>Total (€)</th><th>Status</th>
+          <th data-key="project_kod" data-type="string">Code</th>
+          <th data-key="project_nazov" data-type="string">Project Name</th>
+          <th data-key="program_skratka" data-type="string">Program</th>
+          <th data-key="prijimatel_nazov" data-type="string">Recipient</th>
+          <th data-key="suma_spolu" data-type="number">Total (€)</th>
+          <th data-key="stav" data-type="string">Status</th>
         </tr>
       </thead>
       <tbody id="drilldownBody"></tbody>
@@ -82,15 +112,25 @@
 
 <script src="projects_logic.js"></script>
 <script src="datamart_logic.js"></script>
+<script src="table_resize.js?v=2"></script>
+<script src="multiselect_filter.js?v=2"></script>
 <script>
 const REGIONAL_URL = 'regional_funding_data.json';
 const SUMMARY_URL = 'regional_summary_data.json';
+const BENEFICIARY_URL = 'beneficiary_funding_data.json';
 const SVG_URL = 'assets/slovakia_kraje.svg';
 
 let allData = [];
 let allSummary = [];
-let allPrograms = [];
-const selectedPrograms = new Set();
+let legalFormByIco = new Map();
+let currentDrilldown = null;
+let drilldownSortKey = 'suma_spolu';
+let drilldownSortDir = 'desc';
+
+function drilldownTypeOf(key) {
+  const th = document.querySelector('#drilldownTable th[data-key="' + key + '"]');
+  return th ? th.dataset.type : 'string';
+}
 
 function formatIsoDate(iso) {
   const d = new Date(iso);
@@ -117,49 +157,67 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-function updateProgramToggleLabel() {
-  const label = document.getElementById('programToggleLabel');
-  const count = selectedPrograms.size;
-  if (count === 0) label.textContent = 'All programs';
-  else if (count === 1) label.textContent = Array.from(selectedPrograms)[0];
-  else label.textContent = count + ' programs selected';
-}
+const programFilter = MultiselectFilter.init({
+  multiId: 'programMulti', toggleId: 'programToggle', toggleLabelId: 'programToggleLabel',
+  searchId: 'programSearch', selectAllId: 'programSelectAll', clearAllId: 'programClearAll', optionsId: 'programOptions',
+  allLabel: 'All programs', noMatchLabel: 'No programs match your search.',
+  labelForCount: function (n) { return n + ' programs selected'; },
+  onChange: function () { render(); },
+});
+
+const recipientFilter = MultiselectFilter.init({
+  multiId: 'recipientMulti', toggleId: 'recipientToggle', toggleLabelId: 'recipientToggleLabel',
+  searchId: 'recipientSearch', selectAllId: 'recipientSelectAll', clearAllId: 'recipientClearAll', optionsId: 'recipientOptions',
+  allLabel: 'All recipients', noMatchLabel: 'No recipients match your search.',
+  labelForCount: function (n) { return n + ' recipients selected'; },
+  onChange: function () { render(); },
+});
 
 function populateProgramDropdown(data) {
-  const container = document.getElementById('programOptions');
-  allPrograms = ProjectsLogic.distinctPrograms(data);
-  container.innerHTML = '';
-  allPrograms.forEach(function (p) {
-    const id = 'prog_' + p.skratka.replace(/[^A-Za-z0-9_-]/g, '');
-    const wrap = document.createElement('label');
-    wrap.className = 'ms-option';
-    wrap.title = p.nazov || p.skratka;
-    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + escapeHtml(p.skratka) + '"><span>' + escapeHtml(p.skratka) + '</span>';
-    const cb = wrap.querySelector('input');
-    cb.addEventListener('change', function () {
-      if (cb.checked) selectedPrograms.add(p.skratka);
-      else selectedPrograms.delete(p.skratka);
-      updateProgramToggleLabel();
-      render();
-    });
-    container.appendChild(wrap);
+  const programs = ProjectsLogic.distinctPrograms(data);
+  programFilter.setItems(programs.map(function (p) { return { key: p.skratka, label: p.skratka, searchText: p.skratka + ' ' + (p.nazov || '') }; }));
+}
+
+function populateRecipientDropdown(data) {
+  const seen = new Map();
+  data.forEach(function (r) {
+    const key = DatamartLogic.recipientKey(r);
+    if (!key || seen.has(key)) return;
+    seen.set(key, { ico: r.prijimatel_ico, nazov: r.prijimatel_nazov });
   });
-  updateProgramToggleLabel();
+  const recipients = Array.from(seen.entries()).map(function (e) {
+    const type = legalFormByIco.get(e[1].ico) || '';
+    return { key: e[0], label: type ? e[1].nazov + ' — ' + type : e[1].nazov };
+  }).sort(function (a, b) { return (a.label || '').localeCompare(b.label || ''); });
+  recipientFilter.setItems(recipients);
+}
+
+function goToProject(row) {
+  const params = new URLSearchParams();
+  if (row.project_kod) params.set('kod', row.project_kod);
+  if (row.project_nazov) params.set('nazov', row.project_nazov);
+  window.location.href = 'projects.html?' + params.toString();
 }
 
 function renderDrilldown(nuts3Id, krajNazov) {
+  currentDrilldown = { nuts3Id: nuts3Id, krajNazov: krajNazov };
   const rows = allData.filter(function (r) { return r.region_count === 1 && r.kraj_names === krajNazov; });
-  const filtered = DatamartLogic.filterByProgram(rows, Array.from(selectedPrograms));
-  const sorted = ProjectsLogic.sortData(filtered, 'suma_spolu', 'desc', function () { return 'number'; });
+  let filtered = DatamartLogic.filterByProgram(rows, programFilter.getSelected());
+  filtered = DatamartLogic.filterByRecipient(filtered, recipientFilter.getSelected());
+  const sorted = ProjectsLogic.sortData(filtered, drilldownSortKey, drilldownSortDir, drilldownTypeOf);
 
   document.getElementById('drilldownTitle').textContent = 'Projects in ' + krajNazov + ' (' + sorted.length + ')';
   document.getElementById('drilldownTitle').style.display = 'block';
+  document.getElementById('drilldownHint').style.display = 'block';
   document.getElementById('drilldownWrap').style.display = 'block';
 
   const tbody = document.getElementById('drilldownBody');
   tbody.innerHTML = '';
   sorted.forEach(function (row) {
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.title = 'Click to view this project';
+    tr.addEventListener('click', function () { goToProject(row); });
     tr.innerHTML =
       '<td>' + escapeHtml(row.project_kod || '') + '</td>' +
       '<td class="wrap">' + escapeHtml(row.project_nazov || '') + '</td>' +
@@ -169,6 +227,7 @@ function renderDrilldown(nuts3Id, krajNazov) {
       '<td>' + escapeHtml(row.stav || '') + '</td>';
     tbody.appendChild(tr);
   });
+  TableResize.makeResizable(document.getElementById('drilldownTable'));
 }
 
 function colorForValue(value, min, max) {
@@ -180,10 +239,11 @@ function colorForValue(value, min, max) {
 }
 
 function render() {
-  const programFilteredRegional = DatamartLogic.filterByProgram(allData, Array.from(selectedPrograms));
+  const programFilteredRegional = DatamartLogic.filterByProgram(allData, programFilter.getSelected());
+  const filteredRegional = DatamartLogic.filterByRecipient(programFilteredRegional, recipientFilter.getSelected());
 
   const nationwideProjects = DatamartLogic.dedupeBy(
-    programFilteredRegional.filter(function (r) { return r.region_count > 1; }),
+    filteredRegional.filter(function (r) { return r.region_count > 1; }),
     function (r) { return r.project_id; }
   );
   const nationwideTotal = nationwideProjects.reduce(function (sum, r) { return sum + (Number(r.suma_spolu) || 0); }, 0);
@@ -200,10 +260,10 @@ function render() {
   // regional_summary export is used directly. Selecting programs
   // re-aggregates from the per-project regional_funding rows client-side.
   let byRegion;
-  if (selectedPrograms.size === 0) {
+  if (programFilter.getSelected().length === 0 && recipientFilter.getSelected().length === 0) {
     byRegion = allSummary.filter(function (r) { return r.nuts3_id != null; });
   } else {
-    const singleRegion = programFilteredRegional.filter(function (r) { return r.region_count === 1; });
+    const singleRegion = filteredRegional.filter(function (r) { return r.region_count === 1; });
     byRegion = DatamartLogic.groupSum(singleRegion, function (r) { return r.kraj_names; }, ['suma_spolu'])
       .map(function (g) { return { kraj_nazov: g.key, suma_spolu: g.suma_spolu }; });
   }
@@ -241,29 +301,25 @@ function render() {
     const sumEl = document.getElementById('kraj-sum-' + nuts3Id);
     if (sumEl) sumEl.textContent = '€' + formatEURShort(value);
   });
+
+  // Keep an already-open drilldown in sync with the active filters.
+  if (currentDrilldown) renderDrilldown(currentDrilldown.nuts3Id, currentDrilldown.krajNazov);
 }
 
-const programMulti = document.getElementById('programMulti');
-const programToggle = document.getElementById('programToggle');
-programToggle.addEventListener('click', function (e) {
-  e.stopPropagation();
-  programMulti.classList.toggle('open');
-  programToggle.setAttribute('aria-expanded', programMulti.classList.contains('open') ? 'true' : 'false');
+document.querySelectorAll('#drilldownTable th').forEach(function (th) {
+  th.addEventListener('click', function () {
+    const key = th.dataset.key;
+    if (drilldownSortKey === key) drilldownSortDir = drilldownSortDir === 'asc' ? 'desc' : 'asc';
+    else { drilldownSortKey = key; drilldownSortDir = 'asc'; }
+    document.querySelectorAll('#drilldownTable th').forEach(function (t) { t.classList.remove('sorted-asc', 'sorted-desc'); });
+    th.classList.add(drilldownSortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    if (currentDrilldown) renderDrilldown(currentDrilldown.nuts3Id, currentDrilldown.krajNazov);
+  });
 });
-document.addEventListener('click', function (e) {
-  if (!programMulti.contains(e.target)) programMulti.classList.remove('open');
-});
-document.getElementById('programSelectAll').addEventListener('click', function () {
-  selectedPrograms.clear();
-  allPrograms.forEach(function (p) { selectedPrograms.add(p.skratka); });
-  document.querySelectorAll('#programOptions input[type="checkbox"]').forEach(function (cb) { cb.checked = true; });
-  updateProgramToggleLabel();
-  render();
-});
-document.getElementById('programClearAll').addEventListener('click', function () {
-  selectedPrograms.clear();
-  document.querySelectorAll('#programOptions input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
-  updateProgramToggleLabel();
+
+document.getElementById('resetFilters').addEventListener('click', function () {
+  programFilter.reset();
+  recipientFilter.reset();
   render();
 });
 
@@ -271,12 +327,15 @@ Promise.all([
   fetch(SVG_URL).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + SVG_URL); return r.text(); }),
   fetch(REGIONAL_URL).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + REGIONAL_URL); return r.json(); }),
   fetch(SUMMARY_URL).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + SUMMARY_URL); return r.json(); }),
+  fetch(BENEFICIARY_URL).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' loading ' + BENEFICIARY_URL); return r.json(); }),
 ]).then(function (results) {
   document.getElementById('mapWrap').innerHTML = results[0];
   allData = results[1].regional_funding;
   allSummary = results[2].regions;
+  legalFormByIco = new Map(results[3].beneficiaries.map(function (b) { return [b.ico, b.pravnaforma_nazov]; }));
   document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(results[1].generated_at);
   populateProgramDropdown(allData);
+  populateRecipientDropdown(allData);
   render();
 }).catch(function (err) {
   document.getElementById('updated-label').textContent = '';

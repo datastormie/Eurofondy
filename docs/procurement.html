@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <style>
   .card { max-width: 1300px; }
   table { min-width: 1200px; }
@@ -48,12 +48,37 @@
 
   <div class="filters" style="grid-template-columns: 1fr 1fr;">
     <div class="filter-group">
-      <label for="filterSupplier">Supplier</label>
-      <input type="text" id="filterSupplier" placeholder="Search by supplier...">
+      <label for="supplierToggle">Supplier</label>
+      <div class="multiselect" id="supplierMulti">
+        <button type="button" class="ms-toggle" id="supplierToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="supplierToggleLabel">All suppliers</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="supplierPanel" role="dialog" aria-label="Filter by supplier">
+          <div class="ms-search">
+            <input type="text" id="supplierSearch" placeholder="Type to search suppliers...">
+          </div>
+          <div class="ms-actions">
+            <button type="button" id="supplierSelectAll">Select all</button>
+            <button type="button" id="supplierClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="supplierOptions"></div>
+        </div>
+      </div>
     </div>
     <div class="filter-group">
-      <label for="filterStatus">Procedure status</label>
-      <select id="filterStatus"><option value="">All statuses</option></select>
+      <label for="statusToggle">Procedure status</label>
+      <div class="multiselect" id="statusMulti">
+        <button type="button" class="ms-toggle" id="statusToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="statusToggleLabel">All statuses</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="statusPanel" role="dialog" aria-label="Filter by procedure status">
+          <div class="ms-actions">
+            <button type="button" id="statusSelectAll">Select all</button>
+            <button type="button" id="statusClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="statusOptions"></div>
+        </div>
+      </div>
     </div>
     <div class="filters-actions">
       <button class="btn-secondary" id="resetFilters">Reset filters</button>
@@ -66,7 +91,13 @@
   <div class="table-scroll drilldown-scroll" id="supplierVoWrap" style="display:none;">
     <table id="supplierVoTable">
       <thead>
-        <tr><th>Procedure</th><th>Status</th><th>CPV Category</th><th>Project</th><th>Program</th></tr>
+        <tr>
+          <th data-key="procurement_nazov" data-type="string">Procedure</th>
+          <th data-key="procurement_stav" data-type="string">Status</th>
+          <th data-key="cpv_nazov" data-type="string">CPV Category</th>
+          <th data-key="project_nazov" data-type="string">Project</th>
+          <th data-key="program_skratka" data-type="string">Program</th>
+        </tr>
       </thead>
       <tbody id="supplierVoBody"></tbody>
     </table>
@@ -107,6 +138,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="projects_logic.js"></script>
 <script src="datamart_logic.js"></script>
+<script src="table_resize.js?v=2"></script>
+<script src="multiselect_filter.js?v=2"></script>
 <script>
 const HAS_CHART = typeof Chart !== 'undefined';
 if (HAS_CHART) Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
@@ -117,9 +150,16 @@ let allData = [];
 let currentPage = 1;
 let sortKey = 'celkovasumazmluvy';
 let sortDir = 'desc';
+let voSortKey = 'procurement_nazov';
+let voSortDir = 'asc';
 
 function typeOf(key) {
-  const th = document.querySelector('th[data-key="' + key + '"]');
+  const th = document.querySelector('#dataTable th[data-key="' + key + '"]');
+  return th ? th.dataset.type : 'string';
+}
+
+function voTypeOf(key) {
+  const th = document.querySelector('#supplierVoTable th[data-key="' + key + '"]');
   return th ? th.dataset.type : 'string';
 }
 
@@ -144,30 +184,56 @@ function escapeHtml(value) {
   return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function supplierKey(row) {
+  return row.supplier_ico || row.supplier_nazov;
+}
+
+const supplierFilter = MultiselectFilter.init({
+  multiId: 'supplierMulti', toggleId: 'supplierToggle', toggleLabelId: 'supplierToggleLabel',
+  searchId: 'supplierSearch', selectAllId: 'supplierSelectAll', clearAllId: 'supplierClearAll', optionsId: 'supplierOptions',
+  allLabel: 'All suppliers', noMatchLabel: 'No suppliers match your search.',
+  labelForCount: function (n) { return n + ' suppliers selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
+const statusFilter = MultiselectFilter.init({
+  multiId: 'statusMulti', toggleId: 'statusToggle', toggleLabelId: 'statusToggleLabel',
+  selectAllId: 'statusSelectAll', clearAllId: 'statusClearAll', optionsId: 'statusOptions',
+  allLabel: 'All statuses', labelForCount: function (n) { return n + ' statuses selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
 function getFilters() {
   return {
-    supplier: document.getElementById('filterSupplier').value.trim().toLowerCase(),
-    status: document.getElementById('filterStatus').value,
+    supplier: supplierFilter.getSelected(),
+    status: statusFilter.getSelected(),
   };
 }
 
 function applyFilters(data, filters) {
   return data.filter(function (row) {
-    if (filters.supplier && !((row.supplier_nazov || '').toLowerCase().includes(filters.supplier))) return false;
-    if (filters.status && row.procurement_stav !== filters.status) return false;
+    if (filters.supplier.length > 0 && !filters.supplier.includes(supplierKey(row))) return false;
+    if (filters.status.length > 0 && !filters.status.includes(row.procurement_stav)) return false;
     return true;
   });
 }
 
-function populateStatusFilter(data) {
-  const select = document.getElementById('filterStatus');
-  const statuses = Array.from(new Set(data.map(function (r) { return r.procurement_stav; }).filter(Boolean))).sort();
-  statuses.forEach(function (s) {
-    const opt = document.createElement('option');
-    opt.value = s;
-    opt.textContent = s;
-    select.appendChild(opt);
+function populateSupplierDropdown(data) {
+  const seen = new Map();
+  data.forEach(function (row) {
+    const key = supplierKey(row);
+    if (!key || seen.has(key)) return;
+    seen.set(key, row.supplier_nazov);
   });
+  const suppliers = Array.from(seen.entries()).map(function (e) {
+    return { key: e[0], label: e[1] };
+  }).sort(function (a, b) { return (a.label || '').localeCompare(b.label || ''); });
+  supplierFilter.setItems(suppliers);
+}
+
+function populateStatusFilter(data) {
+  const statuses = Array.from(new Set(data.map(function (r) { return r.procurement_stav; }).filter(Boolean))).sort();
+  statusFilter.setItems(statuses.map(function (s) { return { key: s, label: s }; }));
 }
 
 function renderChart(data) {
@@ -189,7 +255,7 @@ function renderChart(data) {
       maintainAspectRatio: false,
       onClick: function (evt, elements) {
         if (elements.length > 0) {
-          document.getElementById('filterSupplier').value = grouped[elements[0].index].label || '';
+          supplierFilter.setSelected([grouped[elements[0].index].key]);
           currentPage = 1;
           render();
         }
@@ -201,24 +267,28 @@ function renderChart(data) {
   });
 }
 
-function renderSupplierVoRollup(filtered, supplierQuery) {
+function renderSupplierVoRollup(filtered, selectedSupplierKeys) {
   const wrap = document.getElementById('supplierVoWrap');
   const title = document.getElementById('supplierVoTitle');
   const tbody = document.getElementById('supplierVoBody');
 
-  if (!supplierQuery) {
+  if (!selectedSupplierKeys || selectedSupplierKeys.length === 0) {
     wrap.style.display = 'none';
     title.style.display = 'none';
     return;
   }
 
   const vos = DatamartLogic.dedupeBy(filtered, function (r) { return r.procurement_id; });
-  title.textContent = 'Procurement procedures for "' + supplierQuery + '" (' + vos.length + ')';
+  const sortedVos = ProjectsLogic.sortData(vos, voSortKey, voSortDir, voTypeOf);
+  const label = selectedSupplierKeys.length === 1 && filtered.length > 0
+    ? '"' + filtered[0].supplier_nazov + '"'
+    : selectedSupplierKeys.length + ' suppliers';
+  title.textContent = 'Procurement procedures for ' + label + ' (' + sortedVos.length + ')';
   title.style.display = 'block';
   wrap.style.display = 'block';
 
   tbody.innerHTML = '';
-  vos.forEach(function (row) {
+  sortedVos.forEach(function (row) {
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td class="wrap">' + escapeHtml(row.procurement_nazov || '') + '</td>' +
@@ -228,6 +298,7 @@ function renderSupplierVoRollup(filtered, supplierQuery) {
       '<td>' + escapeHtml(row.program_skratka || '') + '</td>';
     tbody.appendChild(tr);
   });
+  TableResize.makeResizable(document.getElementById('supplierVoTable'));
 }
 
 function renderTableRows(rows) {
@@ -266,6 +337,7 @@ function renderPaginationControls(pageResult) {
     ' (page ' + pageResult.page + ' of ' + pageResult.totalPages + ')';
   document.getElementById('prevPage').disabled = pageResult.page <= 1;
   document.getElementById('nextPage').disabled = pageResult.page >= pageResult.totalPages;
+  TableResize.makeResizable(table);
 }
 
 function render() {
@@ -291,13 +363,20 @@ document.querySelectorAll('#dataTable th').forEach(function (th) {
   });
 });
 
-['filterSupplier', 'filterStatus'].forEach(function (id) {
-  document.getElementById(id).addEventListener('input', function () { currentPage = 1; render(); });
-  document.getElementById(id).addEventListener('change', function () { currentPage = 1; render(); });
+document.querySelectorAll('#supplierVoTable th').forEach(function (th) {
+  th.addEventListener('click', function () {
+    const key = th.dataset.key;
+    if (voSortKey === key) voSortDir = voSortDir === 'asc' ? 'desc' : 'asc';
+    else { voSortKey = key; voSortDir = 'asc'; }
+    document.querySelectorAll('#supplierVoTable th').forEach(function (t) { t.classList.remove('sorted-asc', 'sorted-desc'); });
+    th.classList.add(voSortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    renderSupplierVoRollup(applyFilters(allData, getFilters()), getFilters().supplier);
+  });
 });
+
 document.getElementById('resetFilters').addEventListener('click', function () {
-  document.getElementById('filterSupplier').value = '';
-  document.getElementById('filterStatus').value = '';
+  supplierFilter.reset();
+  statusFilter.reset();
   currentPage = 1;
   render();
 });
@@ -319,6 +398,7 @@ fetch(JSON_URL)
   .then(function (payload) {
     allData = payload.contracts;
     document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
+    populateSupplierDropdown(allData);
     populateStatusFilter(allData);
     renderChart(allData);
     render();

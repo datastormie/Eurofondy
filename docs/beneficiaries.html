@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <style>
   .card { max-width: 1300px; }
   table { min-width: 1100px; }
@@ -48,12 +48,40 @@
 
   <div class="filters" style="grid-template-columns: 1fr 1fr;">
     <div class="filter-group">
-      <label for="filterName">Name or ICO</label>
-      <input type="text" id="filterName" placeholder="Search...">
+      <label for="nameToggle">Name or ICO</label>
+      <div class="multiselect" id="nameMulti">
+        <button type="button" class="ms-toggle" id="nameToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="nameToggleLabel">All beneficiaries</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="namePanel" role="dialog" aria-label="Filter by name or ICO">
+          <div class="ms-search">
+            <input type="text" id="nameSearch" placeholder="Type to search name or ICO...">
+          </div>
+          <div class="ms-actions">
+            <button type="button" id="nameSelectAll">Select all</button>
+            <button type="button" id="nameClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="nameOptions"></div>
+        </div>
+      </div>
     </div>
     <div class="filter-group">
-      <label for="filterLegalForm">Legal form</label>
-      <select id="filterLegalForm"><option value="">All legal forms</option></select>
+      <label for="legalFormToggle">Legal form</label>
+      <div class="multiselect" id="legalFormMulti">
+        <button type="button" class="ms-toggle" id="legalFormToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="legalFormToggleLabel">All legal forms</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="legalFormPanel" role="dialog" aria-label="Filter by legal form">
+          <div class="ms-actions">
+            <button type="button" id="legalFormSelectAll">Select all</button>
+            <button type="button" id="legalFormClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="legalFormOptions"></div>
+        </div>
+      </div>
+    </div>
+    <div class="filters-actions">
+      <button class="btn-secondary" id="resetFilters">Reset filters</button>
     </div>
   </div>
 
@@ -96,6 +124,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="projects_logic.js"></script>
 <script src="datamart_logic.js"></script>
+<script src="table_resize.js?v=2"></script>
+<script src="multiselect_filter.js?v=2"></script>
 <script>
 const HAS_CHART = typeof Chart !== 'undefined';
 if (HAS_CHART) Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
@@ -143,33 +173,50 @@ function icoLink(ico) {
   return '<a href="https://finstat.sk/' + encodeURIComponent(ico) + '" target="_blank" rel="noopener noreferrer">' + safe + '</a>';
 }
 
+function beneficiaryKey(row) {
+  return row.ico || row.nazov;
+}
+
+const nameFilter = MultiselectFilter.init({
+  multiId: 'nameMulti', toggleId: 'nameToggle', toggleLabelId: 'nameToggleLabel',
+  searchId: 'nameSearch', selectAllId: 'nameSelectAll', clearAllId: 'nameClearAll', optionsId: 'nameOptions',
+  allLabel: 'All beneficiaries', noMatchLabel: 'No beneficiaries match your search.',
+  labelForCount: function (n) { return n + ' beneficiaries selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
+const legalFormFilter = MultiselectFilter.init({
+  multiId: 'legalFormMulti', toggleId: 'legalFormToggle', toggleLabelId: 'legalFormToggleLabel',
+  selectAllId: 'legalFormSelectAll', clearAllId: 'legalFormClearAll', optionsId: 'legalFormOptions',
+  allLabel: 'All legal forms', labelForCount: function (n) { return n + ' legal forms selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
 function getFilters() {
   return {
-    name: document.getElementById('filterName').value.trim().toLowerCase(),
-    legalForm: document.getElementById('filterLegalForm').value,
+    name: nameFilter.getSelected(),
+    legalForm: legalFormFilter.getSelected(),
   };
 }
 
 function applyFilters(data, filters) {
   return data.filter(function (row) {
-    if (filters.name) {
-      const hay = ((row.nazov || '') + ' ' + (row.ico || '')).toLowerCase();
-      if (!hay.includes(filters.name)) return false;
-    }
-    if (filters.legalForm && row.pravnaforma_nazov !== filters.legalForm) return false;
+    if (filters.name.length > 0 && !filters.name.includes(beneficiaryKey(row))) return false;
+    if (filters.legalForm.length > 0 && !filters.legalForm.includes(row.pravnaforma_nazov)) return false;
     return true;
   });
 }
 
+function populateNameFilter(data) {
+  const options = [...data].sort(function (a, b) { return (a.nazov || '').localeCompare(b.nazov || ''); });
+  nameFilter.setItems(options.map(function (r) {
+    return { key: beneficiaryKey(r), label: r.nazov, searchText: (r.nazov || '') + ' ' + (r.ico || '') };
+  }));
+}
+
 function populateLegalFormFilter(data) {
-  const select = document.getElementById('filterLegalForm');
   const forms = Array.from(new Set(data.map(function (r) { return r.pravnaforma_nazov; }).filter(Boolean))).sort();
-  forms.forEach(function (f) {
-    const opt = document.createElement('option');
-    opt.value = f;
-    opt.textContent = f;
-    select.appendChild(opt);
-  });
+  legalFormFilter.setItems(forms.map(function (f) { return { key: f, label: f }; }));
 }
 
 function renderChart(data) {
@@ -228,6 +275,7 @@ function renderPaginationControls(pageResult) {
     ' (page ' + pageResult.page + ' of ' + pageResult.totalPages + ')';
   document.getElementById('prevPage').disabled = pageResult.page <= 1;
   document.getElementById('nextPage').disabled = pageResult.page >= pageResult.totalPages;
+  TableResize.makeResizable(table);
 }
 
 function render() {
@@ -251,9 +299,11 @@ document.querySelectorAll('th').forEach(function (th) {
   });
 });
 
-['filterName', 'filterLegalForm'].forEach(function (id) {
-  document.getElementById(id).addEventListener('input', function () { currentPage = 1; render(); });
-  document.getElementById(id).addEventListener('change', function () { currentPage = 1; render(); });
+document.getElementById('resetFilters').addEventListener('click', function () {
+  nameFilter.reset();
+  legalFormFilter.reset();
+  currentPage = 1;
+  render();
 });
 document.getElementById('prevPage').addEventListener('click', function () { currentPage -= 1; render(); });
 document.getElementById('nextPage').addEventListener('click', function () { currentPage += 1; render(); });
@@ -273,6 +323,7 @@ fetch(JSON_URL)
   .then(function (payload) {
     allData = payload.beneficiaries;
     document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
+    populateNameFilter(allData);
     populateLegalFormFilter(allData);
     renderChart(allData);
     render();

@@ -48,6 +48,18 @@
     return data.filter(function (row) { return programList.includes(row.program_skratka); });
   }
 
+  // Recipients are keyed by ICO where available, falling back to name for
+  // the handful of rows with no ICO (see regional_funding.html).
+  function recipientKey(row) {
+    return row.prijimatel_ico || row.prijimatel_nazov;
+  }
+
+  function filterByRecipient(data, keys) {
+    if (!keys || keys.length === 0) return data;
+    const keySet = new Set(keys);
+    return data.filter(function (row) { return keySet.has(recipientKey(row)); });
+  }
+
   function monthKey(value) {
     const d = new Date(value);
     const year = d.getUTCFullYear();
@@ -55,7 +67,7 @@
     return year + '-' + month;
   }
 
-  const api = { groupSum, withCumulative, dedupeBy, filterByProgram, monthKey };
+  const api = { groupSum, withCumulative, dedupeBy, filterByProgram, recipientKey, filterByRecipient, monthKey };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

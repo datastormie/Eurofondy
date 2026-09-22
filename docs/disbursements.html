@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <style>
   .card { max-width: 1300px; }
   table { min-width: 1100px; }
@@ -52,6 +52,9 @@
           <span id="programToggleLabel">All programs</span><span class="ms-caret">▾</span>
         </button>
         <div class="ms-panel" id="programPanel" role="dialog" aria-label="Filter by program">
+          <div class="ms-search">
+            <input type="text" id="programSearch" placeholder="Type to search programs...">
+          </div>
           <div class="ms-actions">
             <button type="button" id="programSelectAll">Select all</button>
             <button type="button" id="programClearAll">Clear</button>
@@ -61,8 +64,22 @@
       </div>
     </div>
     <div class="filter-group">
-      <label for="filterType">Payment type</label>
-      <select id="filterType"><option value="">All types</option></select>
+      <label for="typeToggle">Payment type</label>
+      <div class="multiselect" id="typeMulti">
+        <button type="button" class="ms-toggle" id="typeToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="typeToggleLabel">All types</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="typePanel" role="dialog" aria-label="Filter by payment type">
+          <div class="ms-actions">
+            <button type="button" id="typeSelectAll">Select all</button>
+            <button type="button" id="typeClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="typeOptions"></div>
+        </div>
+      </div>
+    </div>
+    <div class="filters-actions">
+      <button class="btn-secondary" id="resetFilters">Reset filters</button>
     </div>
   </div>
 
@@ -99,6 +116,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="projects_logic.js"></script>
 <script src="datamart_logic.js"></script>
+<script src="table_resize.js?v=2"></script>
+<script src="multiselect_filter.js?v=2"></script>
 <script>
 const HAS_CHART = typeof Chart !== 'undefined';
 if (HAS_CHART) Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";
@@ -106,8 +125,6 @@ if (HAS_CHART) Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, san
 const JSON_URL = 'payment_disbursements_data.json';
 const PAGE_SIZE = 25;
 let allData = [];
-let allPrograms = [];
-const selectedPrograms = new Set();
 let currentPage = 1;
 let sortKey = 'event_date';
 let sortDir = 'desc';
@@ -145,57 +162,36 @@ function escapeHtml(value) {
   return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function getFilters() {
-  return { type: document.getElementById('filterType').value };
-}
+const programFilter = MultiselectFilter.init({
+  multiId: 'programMulti', toggleId: 'programToggle', toggleLabelId: 'programToggleLabel',
+  searchId: 'programSearch', selectAllId: 'programSelectAll', clearAllId: 'programClearAll', optionsId: 'programOptions',
+  allLabel: 'All programs', noMatchLabel: 'No programs match your search.',
+  labelForCount: function (n) { return n + ' programs selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
+const typeFilter = MultiselectFilter.init({
+  multiId: 'typeMulti', toggleId: 'typeToggle', toggleLabelId: 'typeToggleLabel',
+  selectAllId: 'typeSelectAll', clearAllId: 'typeClearAll', optionsId: 'typeOptions',
+  allLabel: 'All types', labelForCount: function (n) { return n + ' types selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
 
 function currentFiltered() {
-  let rows = DatamartLogic.filterByProgram(allData, Array.from(selectedPrograms));
-  const filters = getFilters();
-  if (filters.type) rows = rows.filter(function (r) { return r.typ === filters.type; });
+  let rows = DatamartLogic.filterByProgram(allData, programFilter.getSelected());
+  const types = typeFilter.getSelected();
+  if (types.length > 0) rows = rows.filter(function (r) { return types.includes(r.typ); });
   return rows;
 }
 
-function updateProgramToggleLabel() {
-  const label = document.getElementById('programToggleLabel');
-  const count = selectedPrograms.size;
-  if (count === 0) label.textContent = 'All programs';
-  else if (count === 1) label.textContent = Array.from(selectedPrograms)[0];
-  else label.textContent = count + ' programs selected';
-}
-
 function populateProgramDropdown(data) {
-  const container = document.getElementById('programOptions');
-  allPrograms = ProjectsLogic.distinctPrograms(data);
-  container.innerHTML = '';
-  allPrograms.forEach(function (p) {
-    const id = 'prog_' + p.skratka.replace(/[^A-Za-z0-9_-]/g, '');
-    const wrap = document.createElement('label');
-    wrap.className = 'ms-option';
-    wrap.title = p.nazov || p.skratka;
-    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + escapeHtml(p.skratka) + '"><span>' + escapeHtml(p.skratka) + '</span>';
-    const cb = wrap.querySelector('input');
-    cb.addEventListener('change', function () {
-      if (cb.checked) selectedPrograms.add(p.skratka);
-      else selectedPrograms.delete(p.skratka);
-      updateProgramToggleLabel();
-      currentPage = 1;
-      render();
-    });
-    container.appendChild(wrap);
-  });
-  updateProgramToggleLabel();
+  const programs = ProjectsLogic.distinctPrograms(data);
+  programFilter.setItems(programs.map(function (p) { return { key: p.skratka, label: p.skratka, searchText: p.skratka + ' ' + (p.nazov || '') }; }));
 }
 
 function populateTypeFilter(data) {
-  const select = document.getElementById('filterType');
   const types = Array.from(new Set(data.map(function (r) { return r.typ; }).filter(Boolean))).sort();
-  types.forEach(function (t) {
-    const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
-    select.appendChild(opt);
-  });
+  typeFilter.setItems(types.map(function (t) { return { key: t, label: t }; }));
 }
 
 let chartInstance = null;
@@ -263,6 +259,7 @@ function renderPaginationControls(pageResult) {
     ' (page ' + pageResult.page + ' of ' + pageResult.totalPages + ')';
   document.getElementById('prevPage').disabled = pageResult.page <= 1;
   document.getElementById('nextPage').disabled = pageResult.page >= pageResult.totalPages;
+  TableResize.makeResizable(table);
 }
 
 function render() {
@@ -287,33 +284,13 @@ document.querySelectorAll('th').forEach(function (th) {
   });
 });
 
-document.getElementById('filterType').addEventListener('change', function () { currentPage = 1; render(); });
+document.getElementById('resetFilters').addEventListener('click', function () {
+  programFilter.reset();
+  typeFilter.reset();
+  currentPage = 1;
+  render();
+});
 
-const programMulti = document.getElementById('programMulti');
-const programToggle = document.getElementById('programToggle');
-programToggle.addEventListener('click', function (e) {
-  e.stopPropagation();
-  programMulti.classList.toggle('open');
-  programToggle.setAttribute('aria-expanded', programMulti.classList.contains('open') ? 'true' : 'false');
-});
-document.addEventListener('click', function (e) {
-  if (!programMulti.contains(e.target)) programMulti.classList.remove('open');
-});
-document.getElementById('programSelectAll').addEventListener('click', function () {
-  selectedPrograms.clear();
-  allPrograms.forEach(function (p) { selectedPrograms.add(p.skratka); });
-  document.querySelectorAll('#programOptions input[type="checkbox"]').forEach(function (cb) { cb.checked = true; });
-  updateProgramToggleLabel();
-  currentPage = 1;
-  render();
-});
-document.getElementById('programClearAll').addEventListener('click', function () {
-  selectedPrograms.clear();
-  document.querySelectorAll('#programOptions input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
-  updateProgramToggleLabel();
-  currentPage = 1;
-  render();
-});
 document.getElementById('prevPage').addEventListener('click', function () { currentPage -= 1; render(); });
 document.getElementById('nextPage').addEventListener('click', function () { currentPage += 1; render(); });
 

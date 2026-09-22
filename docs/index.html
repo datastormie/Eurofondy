@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <style>
   .chart-section { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--hairline); }
   .scale-toggle { text-align: center; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
@@ -64,6 +64,9 @@
           <span id="codeToggleLabel">All codes</span><span class="ms-caret">▾</span>
         </button>
         <div class="ms-panel" id="codePanel" role="dialog" aria-label="Filter by program code">
+          <div class="ms-search">
+            <input type="text" id="codeSearch" placeholder="Type to search codes...">
+          </div>
           <div class="ms-actions">
             <button type="button" id="codeSelectAll">Select all</button>
             <button type="button" id="codeClearAll">Clear</button>
@@ -79,6 +82,9 @@
           <span id="nameToggleLabel">All programs</span><span class="ms-caret">▾</span>
         </button>
         <div class="ms-panel" id="namePanel" role="dialog" aria-label="Filter by program name">
+          <div class="ms-search">
+            <input type="text" id="nameSearch" placeholder="Type to search programs...">
+          </div>
           <div class="ms-actions">
             <button type="button" id="nameSelectAll">Select all</button>
             <button type="button" id="nameClearAll">Clear</button>
@@ -129,6 +135,8 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="table_resize.js?v=2"></script>
+<script src="multiselect_filter.js?v=2"></script>
 <script>
 const HAS_CHART = typeof Chart !== 'undefined';
 if (HAS_CHART) {
@@ -141,8 +149,6 @@ let sortKey = 'zazmluvnene_spolu';
 let sortDir = 'desc';
 let fundingChart = null;
 let chartMetric = 'volume';
-const selectedCodes = new Set();
-const selectedNames = new Set();
 
 // Draws each bar's raw value centered above the bar — only attached to the
 // project-count chart (the stacked volume chart has two segments per bar,
@@ -180,74 +186,30 @@ function goToProjects(skratka) {
   window.location.href = 'projects.html?program=' + encodeURIComponent(skratka);
 }
 
-function updateCodeToggleLabel() {
-  const label = document.getElementById('codeToggleLabel');
-  const count = selectedCodes.size;
-  if (count === 0) label.textContent = 'All codes';
-  else if (count === 1) label.textContent = Array.from(selectedCodes)[0];
-  else label.textContent = count + ' codes selected';
-}
+const codeFilter = MultiselectFilter.init({
+  multiId: 'codeMulti', toggleId: 'codeToggle', toggleLabelId: 'codeToggleLabel',
+  searchId: 'codeSearch', selectAllId: 'codeSelectAll', clearAllId: 'codeClearAll', optionsId: 'codeOptions',
+  allLabel: 'All codes', noMatchLabel: 'No codes match your search.',
+  labelForCount: function (n) { return n + ' codes selected'; },
+  onChange: function () { render(); },
+});
+
+const nameFilter = MultiselectFilter.init({
+  multiId: 'nameMulti', toggleId: 'nameToggle', toggleLabelId: 'nameToggleLabel',
+  searchId: 'nameSearch', selectAllId: 'nameSelectAll', clearAllId: 'nameClearAll', optionsId: 'nameOptions',
+  allLabel: 'All programs', noMatchLabel: 'No programs match your search.',
+  labelForCount: function (n) { return n + ' programs selected'; },
+  onChange: function () { render(); },
+});
 
 function populateCodeDropdown(data) {
-  const container = document.getElementById('codeOptions');
   const options = [...data].sort(function(a, b) { return a.skratka.localeCompare(b.skratka); });
-  container.innerHTML = '';
-  options.forEach(function(row) {
-    const code = row.skratka;
-    const wrap = document.createElement('label');
-    wrap.className = 'ms-option';
-    wrap.title = row.nazov_sk || code;
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = code;
-    cb.addEventListener('change', function() {
-      if (cb.checked) selectedCodes.add(code);
-      else selectedCodes.delete(code);
-      updateCodeToggleLabel();
-      render();
-    });
-    const span = document.createElement('span');
-    span.textContent = code;
-    wrap.appendChild(cb);
-    wrap.appendChild(span);
-    container.appendChild(wrap);
-  });
-  updateCodeToggleLabel();
-}
-
-function updateNameToggleLabel() {
-  const label = document.getElementById('nameToggleLabel');
-  const count = selectedNames.size;
-  if (count === 0) label.textContent = 'All programs';
-  else if (count === 1) label.textContent = Array.from(selectedNames)[0];
-  else label.textContent = count + ' programs selected';
+  codeFilter.setItems(options.map(function (row) { return { key: row.skratka, label: row.skratka, searchText: row.skratka + ' ' + (row.nazov_sk || '') }; }));
 }
 
 function populateNameDropdown(data) {
-  const container = document.getElementById('nameOptions');
   const options = [...data].sort(function(a, b) { return (a.nazov_sk || '').localeCompare(b.nazov_sk || ''); });
-  container.innerHTML = '';
-  options.forEach(function(row) {
-    const name = row.nazov_sk;
-    const wrap = document.createElement('label');
-    wrap.className = 'ms-option';
-    wrap.title = name;
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = name;
-    cb.addEventListener('change', function() {
-      if (cb.checked) selectedNames.add(name);
-      else selectedNames.delete(name);
-      updateNameToggleLabel();
-      render();
-    });
-    const span = document.createElement('span');
-    span.textContent = name;
-    wrap.appendChild(cb);
-    wrap.appendChild(span);
-    container.appendChild(wrap);
-  });
-  updateNameToggleLabel();
+  nameFilter.setItems(options.map(function (row) { return { key: row.nazov_sk, label: row.nazov_sk }; }));
 }
 
 function renderTable(data) {
@@ -391,11 +353,13 @@ function sortData(data, key, dir) {
 
 function getFilteredData() {
   let filtered = currentData;
-  if (selectedCodes.size > 0) {
-    filtered = filtered.filter(function(row) { return selectedCodes.has(row.skratka); });
+  const codes = codeFilter.getSelected();
+  const names = nameFilter.getSelected();
+  if (codes.length > 0) {
+    filtered = filtered.filter(function(row) { return codes.includes(row.skratka); });
   }
-  if (selectedNames.size > 0) {
-    filtered = filtered.filter(function(row) { return selectedNames.has(row.nazov_sk); });
+  if (names.length > 0) {
+    filtered = filtered.filter(function(row) { return names.includes(row.nazov_sk); });
   }
   return filtered;
 }
@@ -427,60 +391,9 @@ document.querySelectorAll('th').forEach(function(th) {
   });
 });
 
-const codeMulti = document.getElementById('codeMulti');
-const codeToggle = document.getElementById('codeToggle');
-codeToggle.addEventListener('click', function(e) {
-  e.stopPropagation();
-  codeMulti.classList.toggle('open');
-  codeToggle.setAttribute('aria-expanded', codeMulti.classList.contains('open') ? 'true' : 'false');
-});
-document.addEventListener('click', function(e) {
-  if (!codeMulti.contains(e.target)) codeMulti.classList.remove('open');
-});
-document.getElementById('codeSelectAll').addEventListener('click', function() {
-  selectedCodes.clear();
-  currentData.forEach(function(row) { selectedCodes.add(row.skratka); });
-  document.querySelectorAll('#codeOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = true; });
-  updateCodeToggleLabel();
-  render();
-});
-document.getElementById('codeClearAll').addEventListener('click', function() {
-  selectedCodes.clear();
-  document.querySelectorAll('#codeOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
-  updateCodeToggleLabel();
-  render();
-});
-
-const nameMulti = document.getElementById('nameMulti');
-const nameToggle = document.getElementById('nameToggle');
-nameToggle.addEventListener('click', function(e) {
-  e.stopPropagation();
-  nameMulti.classList.toggle('open');
-  nameToggle.setAttribute('aria-expanded', nameMulti.classList.contains('open') ? 'true' : 'false');
-});
-document.addEventListener('click', function(e) {
-  if (!nameMulti.contains(e.target)) nameMulti.classList.remove('open');
-});
-document.getElementById('nameSelectAll').addEventListener('click', function() {
-  selectedNames.clear();
-  currentData.forEach(function(row) { selectedNames.add(row.nazov_sk); });
-  document.querySelectorAll('#nameOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = true; });
-  updateNameToggleLabel();
-  render();
-});
-document.getElementById('nameClearAll').addEventListener('click', function() {
-  selectedNames.clear();
-  document.querySelectorAll('#nameOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
-  updateNameToggleLabel();
-  render();
-});
-
 document.getElementById('resetFilters').addEventListener('click', function() {
-  selectedCodes.clear();
-  selectedNames.clear();
-  document.querySelectorAll('#codeOptions input[type="checkbox"], #nameOptions input[type="checkbox"]').forEach(function(cb) { cb.checked = false; });
-  updateCodeToggleLabel();
-  updateNameToggleLabel();
+  codeFilter.reset();
+  nameFilter.reset();
   render();
 });
 
@@ -497,6 +410,7 @@ fetch(JSON_URL)
     populateCodeDropdown(currentData);
     populateNameDropdown(currentData);
     render();
+    TableResize.makeResizable(document.getElementById('dataTable'));
   })
   .catch(function(err) {
     document.getElementById('updated-label').textContent = '';

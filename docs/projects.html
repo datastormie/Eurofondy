@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <style>
   .card { max-width: 1300px; }
   table { min-width: 1300px; }
@@ -49,16 +49,58 @@
 
   <div class="filters">
     <div class="filter-group">
-      <label for="filterKod">Code</label>
-      <input type="text" id="filterKod" placeholder="e.g. BMVI1002">
+      <label for="kodToggle">Code</label>
+      <div class="multiselect" id="kodMulti">
+        <button type="button" class="ms-toggle" id="kodToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="kodToggleLabel">All codes</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="kodPanel" role="dialog" aria-label="Filter by code">
+          <div class="ms-search">
+            <input type="text" id="kodSearch" placeholder="Type to search codes...">
+          </div>
+          <div class="ms-actions">
+            <button type="button" id="kodSelectAll">Select all</button>
+            <button type="button" id="kodClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="kodOptions"></div>
+        </div>
+      </div>
     </div>
     <div class="filter-group">
-      <label for="filterNazov">Project name</label>
-      <input type="text" id="filterNazov" placeholder="Search by name...">
+      <label for="nazovToggle">Project name</label>
+      <div class="multiselect" id="nazovMulti">
+        <button type="button" class="ms-toggle" id="nazovToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="nazovToggleLabel">All project names</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="nazovPanel" role="dialog" aria-label="Filter by project name">
+          <div class="ms-search">
+            <input type="text" id="nazovSearch" placeholder="Type to search project names...">
+          </div>
+          <div class="ms-actions">
+            <button type="button" id="nazovSelectAll">Select all</button>
+            <button type="button" id="nazovClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="nazovOptions"></div>
+        </div>
+      </div>
     </div>
     <div class="filter-group">
-      <label for="filterRecipient">Recipient</label>
-      <input type="text" id="filterRecipient" placeholder="Search by recipient...">
+      <label for="recipientToggle">Recipient</label>
+      <div class="multiselect" id="recipientMulti">
+        <button type="button" class="ms-toggle" id="recipientToggle" aria-haspopup="true" aria-expanded="false">
+          <span id="recipientToggleLabel">All recipients</span><span class="ms-caret">▾</span>
+        </button>
+        <div class="ms-panel" id="recipientPanel" role="dialog" aria-label="Filter by recipient">
+          <div class="ms-search">
+            <input type="text" id="recipientSearch" placeholder="Type to search recipients...">
+          </div>
+          <div class="ms-actions">
+            <button type="button" id="recipientSelectAll">Select all</button>
+            <button type="button" id="recipientClearAll">Clear</button>
+          </div>
+          <div class="ms-options" id="recipientOptions"></div>
+        </div>
+      </div>
     </div>
     <div class="filter-group">
       <label for="programToggle">Program</label>
@@ -67,6 +109,9 @@
           <span id="programToggleLabel">All programs</span><span class="ms-caret">▾</span>
         </button>
         <div class="ms-panel" id="programPanel" role="dialog" aria-label="Filter by program">
+          <div class="ms-search">
+            <input type="text" id="programSearch" placeholder="Type to search programs...">
+          </div>
           <div class="ms-actions">
             <button type="button" id="programSelectAll">Select all</button>
             <button type="button" id="programClearAll">Clear</button>
@@ -151,6 +196,8 @@
 </div>
 
 <script src="projects_logic.js"></script>
+<script src="table_resize.js?v=2"></script>
+<script src="multiselect_filter.js?v=2"></script>
 <script>
 const JSON_URL = 'regional_funding_data.json';
 const PAGE_SIZE = 25;
@@ -159,8 +206,7 @@ let allData = [];
 let currentPage = 1;
 let sortKey = 'celkova_zazmluvnena_suma';
 let sortDir = 'desc';
-let allPrograms = [];
-const selectedPrograms = new Set();
+let recipientKeyByName = new Map();
 
 function typeOf(key) {
   const th = document.querySelector('th[data-key="' + key + '"]');
@@ -190,12 +236,44 @@ function dateInputToMs(value, endOfDay) {
   return d.getTime();
 }
 
+const kodFilter = MultiselectFilter.init({
+  multiId: 'kodMulti', toggleId: 'kodToggle', toggleLabelId: 'kodToggleLabel',
+  searchId: 'kodSearch', selectAllId: 'kodSelectAll', clearAllId: 'kodClearAll', optionsId: 'kodOptions',
+  allLabel: 'All codes', noMatchLabel: 'No codes match your search.',
+  labelForCount: function (n) { return n + ' codes selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
+const nazovFilter = MultiselectFilter.init({
+  multiId: 'nazovMulti', toggleId: 'nazovToggle', toggleLabelId: 'nazovToggleLabel',
+  searchId: 'nazovSearch', selectAllId: 'nazovSelectAll', clearAllId: 'nazovClearAll', optionsId: 'nazovOptions',
+  allLabel: 'All project names', noMatchLabel: 'No project names match your search.',
+  labelForCount: function (n) { return n + ' project names selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
+const recipientFilter = MultiselectFilter.init({
+  multiId: 'recipientMulti', toggleId: 'recipientToggle', toggleLabelId: 'recipientToggleLabel',
+  searchId: 'recipientSearch', selectAllId: 'recipientSelectAll', clearAllId: 'recipientClearAll', optionsId: 'recipientOptions',
+  allLabel: 'All recipients', noMatchLabel: 'No recipients match your search.',
+  labelForCount: function (n) { return n + ' recipients selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
+const programFilter = MultiselectFilter.init({
+  multiId: 'programMulti', toggleId: 'programToggle', toggleLabelId: 'programToggleLabel',
+  searchId: 'programSearch', selectAllId: 'programSelectAll', clearAllId: 'programClearAll', optionsId: 'programOptions',
+  allLabel: 'All programs', noMatchLabel: 'No programs match your search.',
+  labelForCount: function (n) { return n + ' programs selected'; },
+  onChange: function () { currentPage = 1; render(); },
+});
+
 function getFilters() {
   return {
-    kod: document.getElementById('filterKod').value.trim(),
-    nazov: document.getElementById('filterNazov').value.trim(),
-    recipient: document.getElementById('filterRecipient').value.trim(),
-    program: Array.from(selectedPrograms),
+    kod: kodFilter.getSelected(),
+    nazov: nazovFilter.getSelected(),
+    recipient: recipientFilter.getSelected(),
+    program: programFilter.getSelected(),
     zaciatokFrom: dateInputToMs(document.getElementById('filterZaciatokFrom').value, false),
     zaciatokTo: dateInputToMs(document.getElementById('filterZaciatokTo').value, true),
     koniecFrom: dateInputToMs(document.getElementById('filterKoniecFrom').value, false),
@@ -203,51 +281,34 @@ function getFilters() {
   };
 }
 
-function updateProgramToggleLabel() {
-  const label = document.getElementById('programToggleLabel');
-  const count = selectedPrograms.size;
-  if (count === 0) {
-    label.textContent = 'All programs';
-  } else if (count === 1) {
-    label.textContent = Array.from(selectedPrograms)[0];
-  } else if (count === allPrograms.length) {
-    label.textContent = 'All programs (' + count + ')';
-  } else {
-    label.textContent = count + ' programs selected';
-  }
-}
-
 function populateProgramDropdown(data) {
-  const container = document.getElementById('programOptions');
-  allPrograms = ProjectsLogic.distinctPrograms(data);
-  container.innerHTML = '';
-  allPrograms.forEach(function (p) {
-    const id = 'prog_' + p.skratka.replace(/[^A-Za-z0-9_-]/g, '');
-    const wrap = document.createElement('label');
-    wrap.className = 'ms-option';
-    wrap.title = p.nazov || p.skratka;
-    wrap.innerHTML = '<input type="checkbox" id="' + id + '" value="' + escapeHtml(p.skratka) + '"><span>' +
-      escapeHtml(p.skratka) + '</span>';
-    const cb = wrap.querySelector('input');
-    cb.addEventListener('change', function () {
-      if (cb.checked) selectedPrograms.add(p.skratka);
-      else selectedPrograms.delete(p.skratka);
-      updateProgramToggleLabel();
-      currentPage = 1;
-      render();
-    });
-    container.appendChild(wrap);
-  });
-  updateProgramToggleLabel();
+  const programs = ProjectsLogic.distinctPrograms(data);
+  programFilter.setItems(programs.map(function (p) { return { key: p.skratka, label: p.skratka, searchText: p.skratka + ' ' + (p.nazov || '') }; }));
 }
 
-function setSelectedPrograms(list) {
-  selectedPrograms.clear();
-  (list || []).forEach(function (p) { if (p) selectedPrograms.add(p); });
-  document.querySelectorAll('#programOptions input[type="checkbox"]').forEach(function (cb) {
-    cb.checked = selectedPrograms.has(cb.value);
+function populateKodDropdown(data) {
+  const codes = Array.from(new Set(data.map(function (r) { return r.project_kod; }).filter(Boolean))).sort();
+  kodFilter.setItems(codes.map(function (c) { return { key: c, label: c }; }));
+}
+
+function populateNazovDropdown(data) {
+  const names = Array.from(new Set(data.map(function (r) { return r.project_nazov; }).filter(Boolean))).sort();
+  nazovFilter.setItems(names.map(function (n) { return { key: n, label: n }; }));
+}
+
+function populateRecipientDropdown(data) {
+  const seen = new Map();
+  data.forEach(function (r) {
+    const key = r.prijimatel_ico || r.prijimatel_nazov;
+    if (!key || seen.has(key)) return;
+    seen.set(key, r.prijimatel_nazov);
   });
-  updateProgramToggleLabel();
+  recipientKeyByName = new Map();
+  const recipients = Array.from(seen.entries()).map(function (e) {
+    recipientKeyByName.set(e[1], e[0]);
+    return { key: e[0], label: e[1] };
+  }).sort(function (a, b) { return (a.label || '').localeCompare(b.label || ''); });
+  recipientFilter.setItems(recipients);
 }
 
 function escapeHtml(value) {
@@ -315,6 +376,7 @@ function renderPaginationControls(pageResult) {
 
   document.getElementById('prevPage').disabled = pageResult.page <= 1;
   document.getElementById('nextPage').disabled = pageResult.page >= pageResult.totalPages;
+  TableResize.makeResizable(table);
 }
 
 function render() {
@@ -343,61 +405,30 @@ document.querySelectorAll('th').forEach(function (th) {
   });
 });
 
-const TEXT_FILTER_IDS = ['filterKod', 'filterNazov', 'filterRecipient', 'filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'];
+const DATE_FILTER_IDS = ['filterZaciatokFrom', 'filterZaciatokTo', 'filterKoniecFrom', 'filterKoniecTo'];
 
-TEXT_FILTER_IDS.forEach(function (id) {
+DATE_FILTER_IDS.forEach(function (id) {
   document.getElementById(id).addEventListener('input', function () { currentPage = 1; render(); });
   document.getElementById(id).addEventListener('change', function () { currentPage = 1; render(); });
 });
 
-// ---- Program multi-select dropdown ----
-const programMulti = document.getElementById('programMulti');
-const programToggle = document.getElementById('programToggle');
-
-function setProgramPanelOpen(open) {
-  programMulti.classList.toggle('open', open);
-  programToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-}
-
-programToggle.addEventListener('click', function (e) {
-  e.stopPropagation();
-  setProgramPanelOpen(!programMulti.classList.contains('open'));
-});
-
-document.addEventListener('click', function (e) {
-  if (!programMulti.contains(e.target)) setProgramPanelOpen(false);
-});
-
-document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') setProgramPanelOpen(false);
-});
-
-document.getElementById('programSelectAll').addEventListener('click', function () {
-  setSelectedPrograms(allPrograms.map(function (p) { return p.skratka; }));
-  currentPage = 1;
-  render();
-});
-
-document.getElementById('programClearAll').addEventListener('click', function () {
-  setSelectedPrograms([]);
-  currentPage = 1;
-  render();
-});
-
 document.getElementById('resetFilters').addEventListener('click', function () {
-  TEXT_FILTER_IDS.forEach(function (id) {
+  DATE_FILTER_IDS.forEach(function (id) {
     document.getElementById(id).value = '';
   });
-  setSelectedPrograms([]);
+  kodFilter.reset();
+  nazovFilter.reset();
+  recipientFilter.reset();
+  programFilter.reset();
   document.getElementById('activeFilterBanner').style.display = 'none';
   currentPage = 1;
   render();
 });
 
 document.getElementById('clearActiveFilter').addEventListener('click', function () {
-  setSelectedPrograms([]);
-  document.getElementById('filterRecipient').value = '';
-  document.getElementById('filterKod').value = '';
+  programFilter.reset();
+  recipientFilter.reset();
+  kodFilter.reset();
   document.getElementById('activeFilterBanner').style.display = 'none';
   currentPage = 1;
   render();
@@ -426,20 +457,21 @@ function applyFiltersFromUrl() {
   const kod = params.get('kod');
 
   if (kod) {
-    document.getElementById('filterKod').value = kod;
+    kodFilter.setSelected([kod]);
     document.getElementById('activeFilterText').textContent = 'Showing project:';
     document.getElementById('activeFilterLabel').textContent = params.get('nazov') || kod;
     document.getElementById('activeFilterBanner').style.display = 'block';
   } else if (program) {
     // Accepts one or more comma-separated program abbreviations.
     const list = program.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-    setSelectedPrograms(list);
+    programFilter.setSelected(list);
     document.getElementById('activeFilterText').textContent =
       list.length > 1 ? 'Showing projects for programs:' : 'Showing projects for program:';
     document.getElementById('activeFilterLabel').textContent = list.join(', ');
     document.getElementById('activeFilterBanner').style.display = 'block';
   } else if (recipient) {
-    document.getElementById('filterRecipient').value = recipient;
+    const key = recipientKeyByName.get(recipient) || recipient;
+    recipientFilter.setSelected([key]);
     document.getElementById('activeFilterText').textContent = 'Showing projects for recipient:';
     document.getElementById('activeFilterLabel').textContent = recipient;
     document.getElementById('activeFilterBanner').style.display = 'block';
@@ -455,6 +487,9 @@ fetch(JSON_URL)
     allData = payload.regional_funding;
     document.getElementById('updated-label').textContent = 'Last updated: ' + formatIsoDate(payload.generated_at);
     populateProgramDropdown(allData);
+    populateKodDropdown(allData);
+    populateNazovDropdown(allData);
+    populateRecipientDropdown(allData);
     applyFiltersFromUrl();
     render();
   })

@@ -13,17 +13,11 @@
 
   function applyFilters(data, filters) {
     return data.filter(function (row) {
-      if (filters.kod) {
-        if (!(row.project_kod || '').toLowerCase().includes(filters.kod.toLowerCase())) return false;
-      }
-      if (filters.nazov) {
-        if (!(row.project_nazov || '').toLowerCase().includes(filters.nazov.toLowerCase())) return false;
-      }
-      if (filters.recipient) {
-        if (!(row.prijimatel_nazov || '').toLowerCase().includes(filters.recipient.toLowerCase())) return false;
-      }
-      // filters.program accepts a single string (legacy) or an array of program
-      // abbreviations (multi-select). An empty value / empty array means "all".
+      // kod/nazov/recipient/program each accept an array of exact values to
+      // match (multi-select filters) — an empty or missing array means "all".
+      if (filters.kod && filters.kod.length > 0 && !filters.kod.includes(row.project_kod)) return false;
+      if (filters.nazov && filters.nazov.length > 0 && !filters.nazov.includes(row.project_nazov)) return false;
+      if (filters.recipient && filters.recipient.length > 0 && !filters.recipient.includes(row.prijimatel_ico || row.prijimatel_nazov)) return false;
       if (filters.program) {
         if (Array.isArray(filters.program)) {
           if (filters.program.length > 0 && !filters.program.includes(row.program_skratka)) return false;
