@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 <style>
   .card { max-width: 1300px; }
   table { min-width: 1100px; }
@@ -18,16 +18,12 @@
 <body>
 <div class="topbar">
   <a class="brand" href="index.html">
-    <svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <circle cx="12" cy="12" r="11" fill="#003399"/>
-      <g fill="#FFCC00">
-        <circle cx="12" cy="4" r="1.15"/><circle cx="18.5" cy="7.8" r="1.15"/><circle cx="18.5" cy="16.2" r="1.15"/>
-        <circle cx="12" cy="20" r="1.15"/><circle cx="5.5" cy="16.2" r="1.15"/><circle cx="5.5" cy="7.8" r="1.15"/>
-      </g>
-    </svg>
     EU Funds Slovakia
   </a>
-  <nav class="nav-links">
+  <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="navLinks" aria-label="Toggle navigation menu">
+    <span></span><span></span><span></span>
+  </button>
+  <nav class="nav-links" id="navLinks">
     <a href="index.html">Programs</a>
     <a href="projects.html">Projects</a>
     <a href="top_projects_chart.html">Top 50 Projects</a>
@@ -118,6 +114,7 @@
 <script src="datamart_logic.js"></script>
 <script src="table_resize.js?v=2"></script>
 <script src="multiselect_filter.js?v=2"></script>
+<script src="nav_toggle.js?v=1"></script>
 <script>
 const HAS_CHART = typeof Chart !== 'undefined';
 if (HAS_CHART) Chart.defaults.font.family = "'Montserrat', Arial, Helvetica, sans-serif";

@@ -7,39 +7,201 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 <style>
-  .chart-section { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--hairline); }
-  .scale-toggle { text-align: center; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
-  .scale-toggle:last-of-type { margin-bottom: 0; }
-  .scale-toggle label { margin-right: 20px; cursor: pointer; display: inline-block; }
+  /* ---- Homepage redesign preview: page-scoped overrides ----
+     Layout changes below are scoped to this page only while it's being
+     previewed; promote to styles.css when rolled out site-wide. Typeface
+     stays Montserrat (var(--font-display)/var(--font-body) from styles.css)
+     per the site's single-typeface brand rule. The header/nav redesign
+     (no logo, slim bar, drawer collapse) has already been promoted to
+     styles.css and rolled out to every page. */
+
+  /* ---- Hero: title + KPIs sit directly on the dark background ---- */
+  .hero { text-align: center; max-width: 980px; margin: 10px auto 40px; padding: 0 8px; }
+  .hero h1 {
+    color: #fff;
+    font-size: clamp(26px, 4.2vw, 38px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .hero h1 .nowrap { white-space: nowrap; }
+  .hero .subtitle { color: rgba(255, 255, 255, 0.7); font-weight: 400; letter-spacing: 0.015em; line-height: 1.6; }
+  .hero .updated { color: rgba(255, 255, 255, 0.42); letter-spacing: 0.01em; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr 1fr;
+    gap: 16px;
+    max-width: 1080px;
+    margin: 0 auto 40px;
+    padding: 0 8px;
+  }
+  .kpi-tile {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 14px;
+    padding: 24px 18px;
+    text-align: center;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s ease;
+  }
+  .kpi-tile:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.24); }
+  .kpi-tile--primary {
+    background: rgba(255, 204, 0, 0.06);
+    border-color: rgba(255, 204, 0, 0.28);
+  }
+  .kpi-tile--primary:hover { border-color: rgba(255, 204, 0, 0.45); }
+  .kpi-value {
+    display: block;
+    font-size: 22px;
+    font-weight: 600;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.005em;
+  }
+  .kpi-tile--primary .kpi-value { font-size: 29px; font-weight: 700; color: var(--eu-gold); }
+  .kpi-label {
+    display: block;
+    margin-top: 9px;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: rgba(255, 255, 255, 0.56);
+  }
+  @media (max-width: 1024px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .kpi-tile--primary { grid-column: 1 / -1; } }
+  @media (max-width: 480px) { .kpi-grid { grid-template-columns: 1fr; } .kpi-tile--primary { grid-column: auto; } }
+
+  /* ---- Filters as 3 tiles above the KPI row, same glass-tile design ----
+     position+z-index here is load-bearing: .kpi-tile below uses backdrop-filter,
+     which creates its own stacking context, so without this the open dropdown
+     (position:absolute, overflowing below the tile) paints UNDER the KPI row
+     that follows it in the DOM instead of over it. */
+  .filters-tiles {
+    position: relative;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    max-width: 1080px;
+    margin: 0 auto 20px;
+    padding: 0 8px;
+  }
+  .filter-tile { text-align: left; }
+  .filter-tile .kpi-label { margin-top: 0; margin-bottom: 9px; }
+  .filter-tile .ms-toggle { width: 100%; }
+  .filter-tile--reset { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; }
+  .filter-tile--reset .btn-secondary { width: 100%; }
+  /* Reset button reads its own state: greyed out and inert with nothing to
+     clear, gold-accented and clearly actionable once a filter is applied —
+     so it doesn't look identical whether or not clicking it does anything. */
+  .btn-reset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  }
+  .btn-reset-icon { font-size: 13px; line-height: 1; transition: transform 0.25s ease; }
+  .btn-reset:disabled {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.4);
+  }
+  .btn-reset:not(:disabled) {
+    border-color: var(--eu-gold);
+    color: var(--navy-base);
+    background: var(--eu-gold);
+    font-weight: 700;
+  }
+  .btn-reset:not(:disabled):hover { background: #e6b800; border-color: #e6b800; }
+  .btn-reset:not(:disabled):active .btn-reset-icon { transform: rotate(-70deg); }
+  @media (max-width: 768px) { .filters-tiles { grid-template-columns: 1fr; } }
+
+  /* ---- Section cards: more breathing room, a soft glass edge highlight ---- */
+  .card {
+    box-shadow: 0 24px 60px rgba(2, 10, 30, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    padding: 42px 44px;
+  }
+  .card--narrow + .card--narrow { margin-top: 32px; }
+  @media (max-width: 768px) { .card { padding: 26px 20px; } }
+
+  /* ---- Hint spans the full width of the card, directly above the table ---- */
+  .hint--full { max-width: none; margin: 0 0 22px 0; display: flex; align-items: center; gap: 9px; }
+  .hint-icon { flex-shrink: 0; }
+
+  /* ---- Segmented pill controls, replacing plain radio rows ---- */
+  .segmented-row { display: flex; flex-direction: column; align-items: center; gap: 7px; margin-bottom: 18px; }
+  .segmented-row:last-of-type { margin-bottom: 10px; }
+  .segmented {
+    display: inline-flex;
+    background: rgba(0, 51, 153, 0.05);
+    border-radius: 999px;
+    padding: 4px;
+    gap: 2px;
+  }
+  .seg-option { position: relative; display: block; }
+  .seg-option input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .seg-option span {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--eu-blue);
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  .seg-option span:hover { background: rgba(0, 51, 153, 0.1); }
+  .seg-option input:checked + span { background: var(--eu-blue); color: #fff; font-weight: 600; }
+  .seg-option input:checked + span:hover { background: var(--eu-blue-hover); }
+  .seg-option input:focus-visible + span { outline: 2px solid var(--eu-gold); outline-offset: 2px; }
+  .seg-hint { font-size: 11px; color: var(--muted); text-align: center; margin: 0; letter-spacing: 0.01em; }
+
   .chart-wrap { max-width: 700px; height: 280px; margin: 4px auto 0; }
   table { min-width: 640px; }
   tbody tr { cursor: pointer; }
-
-  .filters-actions--inline { grid-column: -2 / -1; align-self: end; text-align: right; }
+  tbody tr:nth-child(even) td { background: rgba(0, 51, 153, 0.02); }
+  tbody tr:nth-child(even):hover td { background: #f2f5fb; }
+  th { letter-spacing: 0.02em; }
+  /* Cells default to vertical-align:middle, so on rows where Program wraps
+     to 2 lines every other cell floats centered against that taller row
+     instead of lining up with the wrapped text's first line — top-align
+     every cell so a row's content reads along one consistent line. */
+  td { vertical-align: top; }
+  /* This table only had horizontal row dividers — add a thin vertical
+     divider between columns too, most noticeable between the frozen
+     Code/Program columns and the rest of the row. Skip the Program
+     column's own right edge: it already has a scroll-boundary box-shadow
+     (the frozen-column effect below), and a flat line on the same edge
+     flattens/hides that shadow instead of layering with it. */
+  th, td { border-right: 1px solid var(--hairline); }
+  th:last-child, td:last-child { border-right: none; }
+  th:nth-child(2), td:nth-child(2) { border-right: none; }
+  .nav-links a { letter-spacing: 0.01em; }
+  /* table_resize.js sizes each column from its header's rendered width,
+     which can leave too little room for the euro amounts beneath — force a floor. */
+  th:nth-child(5), td:nth-child(5),
+  th:nth-child(6), td:nth-child(6),
+  th:nth-child(7), td:nth-child(7) { min-width: 155px; }
 
   @media (max-width: 768px) { .chart-wrap { height: 240px; } }
   @media (max-width: 480px) {
     table { min-width: 560px; }
-    .scale-toggle label { display: block; margin: 0 0 8px 0; }
     .chart-wrap { height: 220px; }
   }
 </style>
 </head>
 <body>
 <div class="topbar">
-  <a class="brand" href="index.html">
-    <svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <circle cx="12" cy="12" r="11" fill="#003399"/>
-      <g fill="#FFCC00">
-        <circle cx="12" cy="4" r="1.15"/><circle cx="18.5" cy="7.8" r="1.15"/><circle cx="18.5" cy="16.2" r="1.15"/>
-        <circle cx="12" cy="20" r="1.15"/><circle cx="5.5" cy="16.2" r="1.15"/><circle cx="5.5" cy="7.8" r="1.15"/>
-      </g>
-    </svg>
-    EU Funds Slovakia
-  </a>
-  <nav class="nav-links">
+  <a class="brand" href="index.html">EU Funds Slovakia</a>
+  <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="navLinks" aria-label="Toggle navigation menu">
+    <span></span><span></span><span></span>
+  </button>
+  <nav class="nav-links" id="navLinks">
     <a class="current" href="index.html">Programs</a>
     <a href="projects.html">Projects</a>
     <a href="top_projects_chart.html">Top 50 Projects</a>
@@ -49,55 +211,88 @@
     <a href="disbursements.html">Disbursements</a>
   </nav>
 </div>
-<div class="card card--narrow">
-  <h1>EU Funding Programs — Slovakia 2021–2027</h1>
+
+<div class="hero">
+  <h1>EU Funding Programs — Slovakia <span class="nowrap">2021–2027</span></h1>
   <span class="title-rule"></span>
   <p class="subtitle">Data from api.itms21.sk</p>
   <p class="updated" id="updated-label">Loading...</p>
-  <p class="hint">Tip: click a program row to see its projects.</p>
+</div>
 
-  <div class="filters">
-    <div class="filter-group">
-      <label for="codeToggle">Code</label>
-      <div class="multiselect" id="codeMulti">
-        <button type="button" class="ms-toggle" id="codeToggle" aria-haspopup="true" aria-expanded="false">
-          <span id="codeToggleLabel">All codes</span><span class="ms-caret">▾</span>
-        </button>
-        <div class="ms-panel" id="codePanel" role="dialog" aria-label="Filter by program code">
-          <div class="ms-search">
-            <input type="text" id="codeSearch" placeholder="Type to search codes...">
-          </div>
-          <div class="ms-actions">
-            <button type="button" id="codeSelectAll">Select all</button>
-            <button type="button" id="codeClearAll">Clear</button>
-          </div>
-          <div class="ms-options" id="codeOptions"></div>
+<div class="filters-tiles" role="group" aria-label="Filter programs">
+  <div class="kpi-tile filter-tile">
+    <label class="kpi-label" for="codeToggle">Program code</label>
+    <div class="multiselect" id="codeMulti">
+      <button type="button" class="ms-toggle" id="codeToggle" aria-haspopup="true" aria-expanded="false">
+        <span id="codeToggleLabel">All codes</span><span class="ms-caret">▾</span>
+      </button>
+      <div class="ms-panel" id="codePanel" role="dialog" aria-label="Filter by program code">
+        <div class="ms-search">
+          <input type="text" id="codeSearch" placeholder="Type to search codes...">
         </div>
-      </div>
-    </div>
-    <div class="filter-group">
-      <label for="nameToggle">Program</label>
-      <div class="multiselect" id="nameMulti">
-        <button type="button" class="ms-toggle" id="nameToggle" aria-haspopup="true" aria-expanded="false">
-          <span id="nameToggleLabel">All programs</span><span class="ms-caret">▾</span>
-        </button>
-        <div class="ms-panel" id="namePanel" role="dialog" aria-label="Filter by program name">
-          <div class="ms-search">
-            <input type="text" id="nameSearch" placeholder="Type to search programs...">
-          </div>
-          <div class="ms-actions">
-            <button type="button" id="nameSelectAll">Select all</button>
-            <button type="button" id="nameClearAll">Clear</button>
-          </div>
-          <div class="ms-options" id="nameOptions"></div>
+        <div class="ms-actions">
+          <button type="button" id="codeSelectAll">Select all</button>
+          <button type="button" id="codeClearAll">Clear</button>
         </div>
+        <div class="ms-options" id="codeOptions"></div>
       </div>
-    </div>
-    <div class="filters-actions filters-actions--inline">
-      <button class="btn-secondary" id="resetFilters">Reset filters</button>
     </div>
   </div>
+  <div class="kpi-tile filter-tile">
+    <label class="kpi-label" for="nameToggle">Program name</label>
+    <div class="multiselect" id="nameMulti">
+      <button type="button" class="ms-toggle" id="nameToggle" aria-haspopup="true" aria-expanded="false">
+        <span id="nameToggleLabel">All programs</span><span class="ms-caret">▾</span>
+      </button>
+      <div class="ms-panel" id="namePanel" role="dialog" aria-label="Filter by program name">
+        <div class="ms-search">
+          <input type="text" id="nameSearch" placeholder="Type to search programs...">
+        </div>
+        <div class="ms-actions">
+          <button type="button" id="nameSelectAll">Select all</button>
+          <button type="button" id="nameClearAll">Clear</button>
+        </div>
+        <div class="ms-options" id="nameOptions"></div>
+      </div>
+    </div>
+  </div>
+  <div class="kpi-tile filter-tile filter-tile--reset">
+    <span class="kpi-label">Actions</span>
+    <button class="btn-secondary btn-reset" id="resetFilters" disabled>
+      <span class="btn-reset-icon" aria-hidden="true">↺</span>
+      <span id="resetFiltersLabel">Reset filters</span>
+    </button>
+  </div>
+</div>
 
+<div class="kpi-grid" role="group" aria-label="Key funding figures">
+  <div class="kpi-tile kpi-tile--primary">
+    <span class="kpi-value" id="kpiTotalValue">—</span>
+    <span class="kpi-label">Total contracted</span>
+  </div>
+  <div class="kpi-tile">
+    <span class="kpi-value" id="kpiEuValue">—</span>
+    <span class="kpi-label">EU contribution</span>
+  </div>
+  <div class="kpi-tile">
+    <span class="kpi-value" id="kpiSrValue">—</span>
+    <span class="kpi-label">National (SR) contribution</span>
+  </div>
+  <div class="kpi-tile">
+    <span class="kpi-value" id="kpiProjectsValue">—</span>
+    <span class="kpi-label">Projects funded</span>
+  </div>
+</div>
+
+<div class="card card--narrow">
+  <p class="hint hint--full">
+    <svg class="hint-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="var(--eu-gold)"/>
+      <rect x="11" y="10.5" width="2" height="7" rx="1" fill="var(--navy-base)"/>
+      <circle cx="12" cy="7.3" r="1.3" fill="var(--navy-base)"/>
+    </svg>
+    <span>Tip: click a program row to see its projects.</span>
+  </p>
   <div id="table-container">
     <p class="error" style="display:none;" id="error-box"></p>
     <div class="table-scroll">
@@ -118,25 +313,31 @@
       </table>
     </div>
   </div>
+</div>
 
-  <div class="chart-section">
-    <div class="scale-toggle">
-      <label><input type="radio" name="metric" value="volume" checked> Funding volume (€)</label>
-      <label><input type="radio" name="metric" value="count"> Project count</label>
+<div class="card card--narrow chart-card">
+  <div class="segmented-row">
+    <div class="segmented" role="radiogroup" aria-label="Chart metric">
+      <label class="seg-option"><input type="radio" name="metric" value="volume" checked><span>Funding volume (€)</span></label>
+      <label class="seg-option"><input type="radio" name="metric" value="count"><span>Project count</span></label>
     </div>
-    <div class="scale-toggle">
-      <label><input type="radio" name="scale" value="linear" checked> Linear scale</label>
-      <label><input type="radio" name="scale" value="logarithmic"> Log scale (recommended — PSK dwarfs the rest)</label>
+  </div>
+  <div class="segmented-row">
+    <div class="segmented" role="radiogroup" aria-label="Chart scale">
+      <label class="seg-option"><input type="radio" name="scale" value="linear" checked><span>Linear scale</span></label>
+      <label class="seg-option"><input type="radio" name="scale" value="logarithmic"><span>Log scale</span></label>
     </div>
-    <div class="chart-wrap">
-      <canvas id="fundingChart"></canvas>
-    </div>
+    <p class="seg-hint">Log scale recommended — PSK dwarfs the rest.</p>
+  </div>
+  <div class="chart-wrap">
+    <canvas id="fundingChart"></canvas>
   </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="table_resize.js?v=2"></script>
 <script src="multiselect_filter.js?v=2"></script>
+<script src="nav_toggle.js?v=1"></script>
 <script>
 const HAS_CHART = typeof Chart !== 'undefined';
 if (HAS_CHART) {
@@ -149,6 +350,8 @@ let sortKey = 'zazmluvnene_spolu';
 let sortDir = 'desc';
 let fundingChart = null;
 let chartMetric = 'volume';
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let firstKpiRender = true;
 
 // Draws each bar's raw value centered above the bar — only attached to the
 // project-count chart (the stacked volume chart has two segments per bar,
@@ -186,12 +389,21 @@ function goToProjects(skratka) {
   window.location.href = 'projects.html?program=' + encodeURIComponent(skratka);
 }
 
+// ---- Reset button reflects whether there's anything to reset ----
+function updateResetButtonState() {
+  const count = codeFilter.getSelected().length + nameFilter.getSelected().length;
+  const btn = document.getElementById('resetFilters');
+  btn.disabled = count === 0;
+  document.getElementById('resetFiltersLabel').textContent =
+    count > 0 ? 'Reset filters (' + count + ')' : 'Reset filters';
+}
+
 const codeFilter = MultiselectFilter.init({
   multiId: 'codeMulti', toggleId: 'codeToggle', toggleLabelId: 'codeToggleLabel',
   searchId: 'codeSearch', selectAllId: 'codeSelectAll', clearAllId: 'codeClearAll', optionsId: 'codeOptions',
   allLabel: 'All codes', noMatchLabel: 'No codes match your search.',
   labelForCount: function (n) { return n + ' codes selected'; },
-  onChange: function () { render(); },
+  onChange: function () { updateResetButtonState(); render(); },
 });
 
 const nameFilter = MultiselectFilter.init({
@@ -199,7 +411,7 @@ const nameFilter = MultiselectFilter.init({
   searchId: 'nameSearch', selectAllId: 'nameSelectAll', clearAllId: 'nameClearAll', optionsId: 'nameOptions',
   allLabel: 'All programs', noMatchLabel: 'No programs match your search.',
   labelForCount: function (n) { return n + ' programs selected'; },
-  onChange: function () { render(); },
+  onChange: function () { updateResetButtonState(); render(); },
 });
 
 function populateCodeDropdown(data) {
@@ -238,9 +450,51 @@ function formatEURShort(value) {
   return Number(value).toLocaleString();
 }
 
+// ---- KPI hero numbers: animate once on first load, then update instantly
+// as filters change (a single orchestrated motion moment, not repeated). ----
+function computeTotals(data) {
+  return data.reduce(function(acc, row) {
+    acc.eu += Number(row.zazmluvnene_eu) || 0;
+    acc.sr += Number(row.zazmluvnene_sr) || 0;
+    acc.total += Number(row.zazmluvnene_spolu) || 0;
+    acc.projects += Number(row.project_count) || 0;
+    return acc;
+  }, { eu: 0, sr: 0, total: 0, projects: 0 });
+}
+
+function animateValue(el, end, isMoney) {
+  const start = performance.now();
+  const duration = 900;
+  function step(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = end * eased;
+    el.textContent = isMoney ? '€' + formatEURShort(current) : Math.round(current).toLocaleString();
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function setKpiValue(el, value, isMoney) {
+  if (!prefersReducedMotion && firstKpiRender) {
+    animateValue(el, value, isMoney);
+  } else {
+    el.textContent = isMoney ? '€' + formatEURShort(value) : Math.round(value).toLocaleString();
+  }
+}
+
+function updateKpis(data) {
+  const totals = computeTotals(data);
+  setKpiValue(document.getElementById('kpiTotalValue'), totals.total, true);
+  setKpiValue(document.getElementById('kpiEuValue'), totals.eu, true);
+  setKpiValue(document.getElementById('kpiSrValue'), totals.sr, true);
+  setKpiValue(document.getElementById('kpiProjectsValue'), totals.projects, false);
+  firstKpiRender = false;
+}
+
 function renderChart(data) {
   if (!HAS_CHART) {
-    document.querySelector('.chart-section').style.display = 'none';
+    document.querySelector('.chart-card').style.display = 'none';
     return;
   }
   const sortField = chartMetric === 'count' ? 'project_count' : 'zazmluvnene_spolu';
@@ -370,6 +624,7 @@ function renderTableForCurrentFilters() {
 
 function render() {
   const filtered = getFilteredData();
+  updateKpis(filtered);
   renderChart(filtered);
   renderTable(sortData(filtered, sortKey, sortDir));
 }
@@ -394,6 +649,7 @@ document.querySelectorAll('th').forEach(function(th) {
 document.getElementById('resetFilters').addEventListener('click', function() {
   codeFilter.reset();
   nameFilter.reset();
+  updateResetButtonState();
   render();
 });
 
