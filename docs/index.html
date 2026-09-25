@@ -164,7 +164,9 @@
   .chart-wrap { max-width: 700px; height: 280px; margin: 4px auto 0; }
   table { min-width: 640px; }
   tbody tr { cursor: pointer; }
-  tbody tr:nth-child(even) td { background: rgba(0, 51, 153, 0.02); }
+  /* Opaque equivalent of rgba(0,51,153,0.02) over white — a translucent
+     stripe let scrolled cells show through the frozen Code/Program columns. */
+  tbody tr:nth-child(even) td { background: #fafbfd; }
   tbody tr:nth-child(even):hover td { background: #f2f5fb; }
   th { letter-spacing: 0.02em; }
   /* Cells default to vertical-align:middle, so on rows where Program wraps
@@ -180,7 +182,11 @@
      flattens/hides that shadow instead of layering with it. */
   th, td { border-right: 1px solid var(--hairline); }
   th:last-child, td:last-child { border-right: none; }
-  th:nth-child(2), td:nth-child(2) { border-right: none; }
+  td:nth-child(2) { border-right: none; }
+  /* Code and Program cells share z-index:1, so Program (later in the DOM)
+     paints over Code's divider shadow; lift Code above it so the shadow
+     shows on every row. Desktop/tablet only — columns unfreeze on mobile. */
+  @media (min-width: 769px) { td:nth-child(1) { z-index: 2; } }
   .nav-links a { letter-spacing: 0.01em; }
   /* table_resize.js sizes each column from its header's rendered width,
      which can leave too little room for the euro amounts beneath — force a floor. */
